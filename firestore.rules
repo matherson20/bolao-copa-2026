@@ -1,0 +1,74 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function logado() {
+      return request.auth != null;
+    }
+
+    function ehAdmin() {
+      return logado()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+
+    function travaMillis() {
+      return get(/databases/$(database)/documents/config/global).data.travaGruposTimestamp;
+    }
+
+    function configExiste() {
+      return exists(/databases/$(database)/documents/config/global);
+    }
+
+    // Antes da trava se: nao ha config ainda, ou campo ausente, ou agora < trava.
+    // Aceita int e float pois JS envia number que pode vir como float no Firestore.
+    function antesDaTrava() {
+      return !configExiste()
+        || !('travaGruposTimestamp' in get(/databases/$(database)/documents/config/global).data)
+        || request.time.toMillis() < get(/databases/$(database)/documents/config/global).data.travaGruposTimestamp;
+    }
+
+    // Usuarios: cada um cria/edita o proprio doc.
+    // isAdmin so pode ser true se o email esta na lista de admins definida no codigo.
+    // A lista de emails admin e verificada no servidor (db.js) — a regra apenas
+    // impede que um usuario comum se promova: nao pode mudar isAdmin de false para true.
+    match /users/{uid} {
+      allow read: if logado();
+      allow create: if logado()
+        && request.auth.uid == uid;
+      allow update: if logado()
+        && request.auth.uid == uid
+        && (
+          resource.data.isAdmin == true          // ja era admin, pode atualizar
+          || request.resource.data.isAdmin == false  // nao era admin, continua nao sendo
+        );
+    }
+
+    // Jogos: leitura para logados, escrita so admin.
+    match /matches/{id} {
+      allow read: if logado();
+      allow write: if ehAdmin();
+    }
+
+    // Palpites: cada um escreve no proprio doc e SO antes da trava.
+    match /bets/{uid} {
+      allow read: if logado();
+      allow write: if logado()
+        && request.auth.uid == uid
+        && antesDaTrava();
+    }
+
+    // Resultados oficiais e gabarito: leitura para logados, escrita so admin.
+    match /results/{id} {
+      allow read: if logado();
+      allow write: if ehAdmin();
+    }
+
+    // Config global (data de trava): leitura para logados, escrita so admin.
+    match /config/{id} {
+      allow read: if logado();
+      allow write: if ehAdmin();
+    }
+  }
+}

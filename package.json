@@ -1,0 +1,22 @@
+{
+  "name": "bolao-copa-2026",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Bolao da Copa do Mundo 2026 - app privado entre amigos",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "firebase": "^10.12.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.23.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.3.1"
+  }
+}
