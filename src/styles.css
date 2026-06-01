@@ -1310,12 +1310,31 @@ table.palpites tbody tr:hover td { background: var(--verde-claro); }
 }
 
 /* Tabela classificação: colunas responsive */
-.col-pos { text-align: left !important; padding-left: 10px !important; width: 28px; }
-.col-time { text-align: left !important; }
+.col-pos { text-align: center !important; width: 24px; padding: 0 4px !important; }
+.col-time { text-align: left !important; min-width: 90px; }
 .col-pts { font-weight: 800 !important; color: var(--verde-escuro) !important; }
 .col-sg { font-weight: 600; }
-.tab-bandeira { font-size: 1.1rem; flex-shrink: 0; }
-.tab-nome { font-weight: 600; font-size: 0.78rem; white-space: normal; word-break: break-word; line-height: 1.2; }
+
+.tab-time-inner {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.tab-bandeira { font-size: 1rem; flex-shrink: 0; line-height: 1; }
+.tab-nome {
+  font-weight: 600;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 90px;
+}
+@media (min-width: 400px) {
+  .tab-nome { max-width: 120px; }
+}
+@media (min-width: 600px) {
+  .tab-nome { max-width: none; white-space: normal; }
+}
 
 /* Em telas pequenas, oculta V E D */
 @media (max-width: 480px) {

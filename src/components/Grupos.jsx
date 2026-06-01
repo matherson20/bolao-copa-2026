@@ -59,8 +59,10 @@ function TabelaClassificacao({ classificacao }) {
             }>
               <td className="col-pos">{idx + 1}</td>
               <td className="col-time">
-                <span className="tab-bandeira">{bandeira(time.time)}</span>
-                <span className="tab-nome">{time.time}</span>
+                <div className="tab-time-inner">
+                  <span className="tab-bandeira">{bandeira(time.time)}</span>
+                  <span className="tab-nome">{time.time}</span>
+                </div>
               </td>
               <td className="col-pts">{time.pontos}</td>
               <td>{time.jogos}</td>
