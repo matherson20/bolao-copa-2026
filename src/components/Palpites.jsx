@@ -1,23 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../lib/useAuth.jsx";
-import { getBets, saveBets, getConfig } from "../lib/db";
+import { getBets, saveBets, getConfig, getMatches } from "../lib/db";
 import { bandeira } from "../lib/teams";
-import { ESPECIAIS_LABEL, PONTOS_ESPECIAIS } from "../lib/scoring";
+import { ESPECIAIS_LABEL, PONTOS_ESPECIAIS, FASE_LABEL } from "../lib/scoring";
 import { gerarJogosFaseGrupos } from "../lib/seedData";
-import { calcularClassificacaoGrupo, grupoCompleto } from "../lib/classificacao";
-import {
-  getClassificados,
-  gerarTrintaEDois,
-  gerarOitavas,
-  gerarQuartas,
-  gerarSemis,
-  gerarFinal,
-  todosGruposCompletos,
-  faseCompleta,
-} from "../lib/playoffs";
+import { calcularClassificacaoGrupo } from "../lib/classificacao";
 
 // Jogos da fase de grupos são dados fixos — vêm do seed local, não do Firestore
 const JOGOS_GRUPOS = gerarJogosFaseGrupos();
+
+const FASES_MATA = ["r32", "oitavas", "quartas", "semi", "terceiro", "final"];
 
 function fmtData(iso) {
   if (!iso) return "";
@@ -146,22 +138,32 @@ export default function Palpites() {
   const [salvando, setSalvando] = useState(false);
   const [toast, setToast] = useState("");
 
+  const [mataMataAberto, setMataMataAberto] = useState(false);
+  const [travaMataMataTs, setTravaMataMataTs] = useState(null);
+  const [jogosMataMata, setJogosMataMata] = useState([]);
   const [secoes, setSecoes] = useState({ especiais: true, grupos: true, matamata: true });
   const [gruposAbertos, setGruposAbertos] = useState({});
 
   function toggleSecao(k) { setSecoes((p) => ({ ...p, [k]: !p[k] })); }
   function toggleGrupo(g) { setGruposAbertos((p) => ({ ...p, [g]: !p[g] })); }
 
-  // Carrega apenas palpites e config — jogos são locais
   useEffect(() => {
     (async () => {
       try {
-        const [bets, cfg] = await Promise.all([getBets(user.uid), getConfig()]);
+        const [bets, cfg, allMatches] = await Promise.all([
+          getBets(user.uid),
+          getConfig(),
+          getMatches(),
+        ]);
         setPalpites(bets.jogos || {});
         setEspeciais(bets.especiais || {});
         setTravaTs(cfg?.travaGruposTimestamp || null);
+        setMataMataAberto(cfg?.mataMataAberto === true);
+        setTravaMataMataTs(cfg?.travaMataMataTimestamp || null);
 
-        // Abre todos os grupos por padrão
+        const mata = allMatches.filter((m) => FASES_MATA.includes(m.fase));
+        setJogosMataMata(mata);
+
         const init = {};
         GRUPOS_LISTA.forEach(([nome]) => { init[nome] = true; });
         setGruposAbertos(init);
@@ -183,31 +185,8 @@ export default function Palpites() {
     return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
   }, []);
 
-  const gruposMap = useMemo(() => {
-    const m = {};
-    GRUPOS_LISTA.forEach(([n, l]) => { m[n] = l; });
-    return m;
-  }, [GRUPOS_LISTA]);
-
-  // ── Derivações do mata-mata ──────────────────────────────────────────────────
-
-  const classificados = useMemo(
-    () => getClassificados(gruposMap, palpites, calcularClassificacaoGrupo),
-    [gruposMap, palpites]
-  );
-
-  const r32 = useMemo(() => gerarTrintaEDois(classificados), [classificados]);
-  const oitavas = useMemo(() => gerarOitavas(r32, palpites), [r32, palpites]);
-  const quartas = useMemo(() => gerarQuartas(oitavas, palpites), [oitavas, palpites]);
-  const semis = useMemo(() => gerarSemis(quartas, palpites), [quartas, palpites]);
-  const { terceiro, final } = useMemo(() => gerarFinal(semis, palpites), [semis, palpites]);
-
-  const r32Completo = useMemo(() => faseCompleta(r32, palpites), [r32, palpites]);
-  const oitavasCompletas = useMemo(() => faseCompleta(oitavas, palpites), [oitavas, palpites]);
-  const quartasCompletas = useMemo(() => faseCompleta(quartas, palpites), [quartas, palpites]);
-  const semisCompletas = useMemo(() => faseCompleta(semis, palpites), [semis, palpites]);
-
   const travado = travaTs ? Date.now() >= new Date(travaTs).getTime() : false;
+  const mataTravado = travaMataMataTs ? Date.now() >= new Date(travaMataMataTs).getTime() : false;
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -221,7 +200,7 @@ export default function Palpites() {
   }
 
   async function salvar() {
-    if (travado) return;
+    if (travado && (!mataMataAberto || mataTravado)) return;
     setSalvando(true);
     try {
       await saveBets(user.uid, { jogos: palpites, especiais });
@@ -367,47 +346,41 @@ export default function Palpites() {
           aberta={secoes.matamata} onToggle={() => toggleSecao("matamata")} />
         {secoes.matamata && (
           <div className="secao-corpo">
-
-            <MataFase titulo="32-avos de Final" jogos={r32}
-              palpites={palpites} travado={travado} bloqueado={false}
-              onGol={setGol} />
-
-            <MataFase titulo="Oitavas de Final" jogos={oitavas}
-              palpites={palpites} travado={travado} bloqueado={!r32Completo}
-              onGol={setGol} dica="Preencha todos os 32-avos para desbloquear." />
-
-            <MataFase titulo="Quartas de Final" jogos={quartas}
-              palpites={palpites} travado={travado} bloqueado={!oitavasCompletas}
-              onGol={setGol} dica="Preencha todas as oitavas para desbloquear." />
-
-            <MataFase titulo="Semifinais" jogos={semis}
-              palpites={palpites} travado={travado} bloqueado={!quartasCompletas}
-              onGol={setGol} dica="Preencha todas as quartas para desbloquear." />
-
-            <div className="mata-fase">
-              <div className="mata-fase-titulo">Decisões Finais</div>
-              {!semisCompletas && <p className="mata-dica">Preencha as semifinais para desbloquear.</p>}
-              <div className="mata-grid mata-grid-2">
-                <div>
-                  <div className="mata-sub-label">🥉 3º Lugar</div>
-                  <JogoCard jogo={terceiro} palpite={palpites[terceiro.id]}
-                    travado={travado} bloqueado={!semisCompletas}
-                    onChange={(lado, valor) => setGol(terceiro.id, lado, valor)} />
-                </div>
-                <div>
-                  <div className="mata-sub-label">🏆 Final</div>
-                  <JogoCard jogo={final} palpite={palpites[final.id]}
-                    travado={travado} bloqueado={!semisCompletas}
-                    onChange={(lado, valor) => setGol(final.id, lado, valor)} />
-                </div>
+            {!mataMataAberto ? (
+              <div className="aviso">
+                <span>⏳</span>
+                <span>Os palpites do mata-mata serão liberados após o fim da fase de grupos.</span>
               </div>
-            </div>
-
+            ) : (
+              <>
+                {mataTravado && (
+                  <div className="aviso travado">
+                    <span>🔒</span>
+                    <span><b>Palpites do mata-mata travados!</b>{travaMataMataTs ? ` (${fmtData(travaMataMataTs)})` : ""}</span>
+                  </div>
+                )}
+                {FASES_MATA.map((fase) => {
+                  const jogosDaFase = jogosMataMata.filter((j) => j.fase === fase);
+                  if (!jogosDaFase.length) return null;
+                  return (
+                    <MataFase
+                      key={fase}
+                      titulo={FASE_LABEL[fase]}
+                      jogos={jogosDaFase}
+                      palpites={palpites}
+                      travado={mataTravado}
+                      bloqueado={false}
+                      onGol={setGol}
+                    />
+                  );
+                })}
+              </>
+            )}
           </div>
         )}
       </div>
 
-      {!travado && (
+      {(!travado || (mataMataAberto && !mataTravado)) && (
         <button className="btn-salvar" onClick={salvar} disabled={salvando}>
           {salvando ? "Salvando…" : "💾 Salvar palpites"}
         </button>

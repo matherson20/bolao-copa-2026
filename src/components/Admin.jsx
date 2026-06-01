@@ -34,6 +34,8 @@ export default function Admin() {
   const [resultados, setResultados] = useState({});
   const [gabarito, setGabarito] = useState({});
   const [travaTs, setTravaTs] = useState("");
+  const [travaMataMataTs, setTravaMataMataTs] = useState("");
+  const [mataMataAberto, setMataMataAberto] = useState(false);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
   const [importando, setImportando] = useState(false);
@@ -50,13 +52,20 @@ export default function Admin() {
     setResultados(res.resultados || {});
     setGabarito(res.gabaritoEspeciais || {});
     if (cfg?.travaGruposTimestamp) {
-      // converte ISO -> formato do input datetime-local
       const d = new Date(cfg.travaGruposTimestamp);
       const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
         .toISOString()
         .slice(0, 16);
       setTravaTs(local);
     }
+    if (cfg?.travaMataMataTimestamp) {
+      const d = new Date(cfg.travaMataMataTimestamp);
+      const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16);
+      setTravaMataMataTs(local);
+    }
+    setMataMataAberto(cfg?.mataMataAberto === true);
   }
 
   useEffect(() => {
@@ -166,17 +175,26 @@ export default function Admin() {
     flash("Data de trava salva.");
   }
 
-  // ---- Liberar mata-mata ----
+  // ---- Liberar / fechar mata-mata ----
   async function liberarMataMata() {
     if (!confirm("Liberar os palpites do mata-mata para todos os participantes?")) return;
     await setConfig({ mataMataAberto: true });
+    setMataMataAberto(true);
     flash("Mata-mata liberado!");
   }
 
   async function fecharMataMata() {
     if (!confirm("Fechar os palpites do mata-mata?")) return;
     await setConfig({ mataMataAberto: false });
+    setMataMataAberto(false);
     flash("Mata-mata fechado.");
+  }
+
+  async function salvarTravaMataMata() {
+    if (!travaMataMataTs) return;
+    const millis = new Date(travaMataMataTs).getTime();
+    await setConfig({ travaMataMataTimestamp: millis });
+    flash("Trava do mata-mata salva.");
   }
 
   // ---- Resultados ----
@@ -271,17 +289,33 @@ export default function Admin() {
         </button>
 
         <div style={{ marginTop: 20, borderTop: "1px solid var(--borda)", paddingTop: 16 }}>
-          <label style={{ fontWeight: 700, display: "block", marginBottom: 8 }}>Fase Mata-mata</label>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button className="btn primario" style={{ flex: 1 }} onClick={liberarMataMata}>
+          <label style={{ fontWeight: 700, display: "block", marginBottom: 8 }}>
+            Fase Mata-mata —{" "}
+            <span style={{ color: mataMataAberto ? "var(--verde)" : "var(--texto-suave)" }}>
+              {mataMataAberto ? "🟢 Aberto" : "🔴 Fechado"}
+            </span>
+          </label>
+          <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+            <button className="btn primario" style={{ flex: 1 }} onClick={liberarMataMata} disabled={mataMataAberto}>
               🔓 Liberar mata-mata
             </button>
-            <button className="btn contorno" style={{ flex: 1 }} onClick={fecharMataMata}>
+            <button className="btn contorno" style={{ flex: 1 }} onClick={fecharMataMata} disabled={!mataMataAberto}>
               🔒 Fechar mata-mata
             </button>
           </div>
+          <div className="campo">
+            <label>Trava dos palpites do mata-mata (início do 1º jogo)</label>
+            <input
+              type="datetime-local"
+              value={travaMataMataTs}
+              onChange={(e) => setTravaMataMataTs(e.target.value)}
+            />
+          </div>
+          <button className="btn azul" style={{ marginTop: 6 }} onClick={salvarTravaMataMata}>
+            Salvar trava do mata-mata
+          </button>
           <p style={{ fontSize: "0.75rem", color: "var(--texto-suave)", marginTop: 6 }}>
-            Libere após a fase de grupos terminar para que os participantes preencham o chaveamento.
+            Libere após a fase de grupos terminar. Os jogos do mata-mata devem estar cadastrados no Firestore (matches) com a fase correta (r32, oitavas, etc.) antes de liberar.
           </p>
         </div>
 
