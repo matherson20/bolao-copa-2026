@@ -1,21 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { getAllUsers, getAllBets, getConfig } from "../lib/db";
+import { getAllUsers, getAllBets, getConfig, getMatches, getResults } from "../lib/db";
 import { gerarJogosFaseGrupos } from "../lib/seedData";
 import { bandeira } from "../lib/teams";
+import { statusDoPalpite } from "../lib/scoring";
+import { sincronizarResultadosOpenFootball } from "../lib/resultsSync";
 
-const TODOS_JOGOS = gerarJogosFaseGrupos();
+const JOGOS_GRUPOS = gerarJogosFaseGrupos();
+const FASES_MATA = ["r32", "oitavas", "quartas", "semi", "terceiro", "final"];
 
 function fmtHora(iso) {
   if (!iso) return "";
   try {
     return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  } catch { return ""; }
-}
-
-function fmtDiaMes(iso) {
-  if (!iso) return "";
-  try {
-    return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
   } catch { return ""; }
 }
 
@@ -34,43 +30,77 @@ function dataLabel(iso) {
   return d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
 }
 
+const STATUS_INFO = {
+  exato:     { icone: "🎯", classe: "st-exato",     texto: "Placar exato" },
+  resultado: { icone: "✓",  classe: "st-resultado", texto: "Resultado certo" },
+  errado:    { icone: "✗",  classe: "st-errado",    texto: "Errou" },
+  pendente:  { icone: "•",  classe: "st-pendente",  texto: "" },
+};
+
 export default function Hoje() {
   const [users, setUsers] = useState([]);
   const [allBets, setAllBets] = useState({});
+  const [resultados, setResultados] = useState({});
+  const [jogosMata, setJogosMata] = useState([]);
   const [travado, setTravado] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [diaOffset, setDiaOffset] = useState(0); // 0 = hoje, -1 = ontem, +1 = amanhã
+  const [sincronizando, setSincronizando] = useState(false);
+  const [diaOffset, setDiaOffset] = useState(0);
 
   useEffect(() => {
     (async () => {
       try {
-        const [us, bets, cfg] = await Promise.all([
-          getAllUsers(), getAllBets(), getConfig(),
+        // 1) Tenta atualizar resultados pela fonte pública (grava só se for admin).
+        setSincronizando(true);
+        try { await sincronizarResultadosOpenFootball(); } catch { /* offline/sem permissão: ignora */ }
+        setSincronizando(false);
+
+        // 2) Carrega tudo já com resultados frescos.
+        const [us, bets, cfg, matches, res] = await Promise.all([
+          getAllUsers(), getAllBets(), getConfig(), getMatches(), getResults(),
         ]);
         setUsers(us);
         setAllBets(bets);
+        setResultados(res.resultados || {});
+        setJogosMata((matches || []).filter((m) => FASES_MATA.includes(m.fase) && m.timeCasa && m.timeFora));
         const ts = cfg?.travaGruposTimestamp;
         setTravado(ts ? Date.now() >= new Date(ts).getTime() : false);
       } catch (e) { console.error(e); }
-      finally { setLoading(false); }
+      finally { setLoading(false); setSincronizando(false); }
     })();
   }, []);
 
-  // Data alvo navegada pelo usuário
-  const dataAlvo = useMemo(() => {
+  const dataAlvoISO = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() + diaOffset);
     d.setHours(0, 0, 0, 0);
-    return d;
+    return d.toISOString();
   }, [diaOffset]);
 
-  const dataAlvoISO = useMemo(() => dataAlvo.toISOString(), [dataAlvo]);
-
-  // Jogos do dia alvo
+  // Jogos do dia = fase de grupos (local) + mata-mata (Firestore)
   const jogosDoDia = useMemo(() => {
-    return TODOS_JOGOS.filter((j) => mesmodia(j.dataHora, dataAlvoISO))
+    const todos = [...JOGOS_GRUPOS, ...jogosMata];
+    return todos
+      .filter((j) => mesmodia(j.dataHora, dataAlvoISO))
       .sort((a, b) => new Date(a.dataHora) - new Date(b.dataHora));
-  }, [dataAlvoISO]);
+  }, [dataAlvoISO, jogosMata]);
+
+  // Mini-ranking do dia: soma de pontos de cada participante nos jogos do dia
+  const liderancaDoDia = useMemo(() => {
+    const linhas = users.map((u) => {
+      let pts = 0, exatos = 0;
+      for (const jogo of jogosDoDia) {
+        const palpite = allBets[u.uid]?.jogos?.[jogo.id];
+        const { status, pts: p } = statusDoPalpite(palpite, resultados[jogo.id], jogo.fase || "grupos");
+        pts += p;
+        if (status === "exato") exatos++;
+      }
+      return { uid: u.uid, nome: (u.nome || "").split(" ")[0], foto: u.foto, pts, exatos };
+    });
+    const comPontos = linhas.filter((l) => l.pts > 0);
+    comPontos.sort((a, b) => b.pts - a.pts || b.exatos - a.exatos);
+    return comPontos;
+  }, [users, jogosDoDia, allBets, resultados]);
 
   if (loading) return <div className="centro"><div className="spinner" />Carregando…</div>;
 
@@ -88,12 +118,38 @@ export default function Hoje() {
         <button className="hoje-nav-btn" onClick={() => setDiaOffset(d => d + 1)}>Próximo ›</button>
       </div>
 
+      {sincronizando && (
+        <div className="aviso" style={{ marginBottom: 12 }}>
+          <span className="btn-spinner" style={{ borderTopColor: "#1d4ed8", borderColor: "rgba(29,78,216,0.3)" }} />
+          <span>Buscando resultados atualizados…</span>
+        </div>
+      )}
+
+      {/* Líder do dia */}
+      {liderancaDoDia.length > 0 && (
+        <div className="lider-dia">
+          <div className="lider-dia-titulo">🏅 Quem pontuou hoje</div>
+          <div className="lider-dia-lista">
+            {liderancaDoDia.slice(0, 5).map((l, i) => (
+              <div key={l.uid} className={`lider-item${i === 0 ? " topo" : ""}`}>
+                <span className="lider-pos">{i + 1}º</span>
+                {l.foto
+                  ? <img src={l.foto} alt="" className="lider-avatar" />
+                  : <span className="lider-avatar-fb">{(l.nome || "?")[0]}</span>}
+                <span className="lider-nome">{l.nome}</span>
+                <span className="lider-pts">+{l.pts}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {nenhum ? (
         <div className="hoje-vazio">
           <div style={{ fontSize: "2.5rem" }}>📅</div>
           <p>Nenhum jogo neste dia.</p>
           <p style={{ fontSize: "0.8rem", opacity: 0.6 }}>
-            A Copa vai de 11/06 a 27/06 na fase de grupos.
+            Use ‹ Anterior / Próximo › para navegar pelos dias da Copa.
           </p>
         </div>
       ) : (
@@ -101,27 +157,39 @@ export default function Hoje() {
           {!travado && (
             <div className="aviso" style={{ marginBottom: 12 }}>
               <span>🙈</span>
-              <span>Os palpites ficam visíveis após o início da Copa.</span>
+              <span>Os palpites de todos ficam visíveis após o início da Copa.</span>
             </div>
           )}
 
           <div className="hoje-jogos">
             {jogosDoDia.map((jogo) => {
+              const res = resultados[jogo.id];
+              const temResultado = res && res.casa != null && res.fora != null;
               return (
                 <div key={jogo.id} className="hoje-card">
                   {/* Cabeçalho do jogo */}
                   <div className="hoje-jogo-header">
-                    <span className="hoje-grupo">Grupo {jogo.grupo}</span>
-                    <span className="hoje-hora">{fmtHora(jogo.dataHora)}</span>
+                    <span className="hoje-grupo">
+                      {jogo.fase && jogo.fase !== "grupos"
+                        ? (jogo.label || jogo.fase)
+                        : `Grupo ${jogo.grupo}`}
+                    </span>
+                    <span className="hoje-hora">
+                      {temResultado ? "ENCERRADO" : fmtHora(jogo.dataHora)}
+                    </span>
                   </div>
 
-                  {/* Times */}
+                  {/* Times + placar oficial */}
                   <div className="hoje-times">
                     <div className="hoje-time">
                       <span className="hoje-bandeira">{bandeira(jogo.timeCasa)}</span>
                       <span className="hoje-time-nome">{jogo.timeCasa}</span>
                     </div>
-                    <span className="hoje-vs">×</span>
+                    {temResultado ? (
+                      <span className="hoje-placar-oficial">{res.casa} <span>×</span> {res.fora}</span>
+                    ) : (
+                      <span className="hoje-vs">×</span>
+                    )}
                     <div className="hoje-time hoje-time-fora">
                       <span className="hoje-time-nome">{jogo.timeFora}</span>
                       <span className="hoje-bandeira">{bandeira(jogo.timeFora)}</span>
@@ -129,13 +197,15 @@ export default function Hoje() {
                   </div>
 
                   {/* Palpites de todos */}
-                  {travado && users.length > 0 && (
+                  {travado && users.length > 0 ? (
                     <div className="hoje-palpites">
                       <div className="hoje-palpites-label">Palpites</div>
                       <div className="hoje-palpites-lista">
                         {users.map((u) => {
                           const p = allBets[u.uid]?.jogos?.[jogo.id];
                           const tem = p && p.casa != null && p.fora != null;
+                          const { status, pts } = statusDoPalpite(p, res, jogo.fase || "grupos");
+                          const info = STATUS_INFO[status] || STATUS_INFO.pendente;
                           return (
                             <div key={u.uid} className="hoje-palpite-item">
                               {u.foto
@@ -146,14 +216,17 @@ export default function Hoje() {
                               <span className={`hoje-placar${!tem ? " hoje-placar-vazio" : ""}`}>
                                 {tem ? `${p.casa}×${p.fora}` : "—"}
                               </span>
+                              {temResultado && tem && (
+                                <span className={`hoje-status ${info.classe}`} title={info.texto}>
+                                  {info.icone}{pts > 0 ? ` +${pts}` : ""}
+                                </span>
+                              )}
                             </div>
                           );
                         })}
                       </div>
                     </div>
-                  )}
-
-                  {!travado && (
+                  ) : (
                     <div className="hoje-antes-trava">
                       🙈 Palpites ocultos até a Copa começar
                     </div>

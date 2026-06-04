@@ -7,14 +7,12 @@ import {
   saveGabaritoEspeciais,
   getConfig,
   setConfig,
+  resetarBolao,
 } from "../lib/db";
+import { useAuth } from "../lib/useAuth.jsx";
 import { bandeira } from "../lib/teams";
 import { ESPECIAIS_LABEL } from "../lib/scoring";
-import {
-  getFinishedMatches,
-  convertFixtureToResult,
-  findMatchId,
-} from "../lib/apiFootball";
+import { sincronizarResultadosOpenFootball } from "../lib/resultsSync";
 import { getDadosSeed } from "../lib/seedData";
 
 // Fonte publica e gratuita do calendario (openfootball, dominio publico, sem API key).
@@ -30,6 +28,7 @@ function slug(s) {
 }
 
 export default function Admin() {
+  const { user } = useAuth();
   const [matches, setMatches] = useState([]);
   const [resultados, setResultados] = useState({});
   const [gabarito, setGabarito] = useState({});
@@ -40,7 +39,7 @@ export default function Admin() {
   const [msg, setMsg] = useState("");
   const [importando, setImportando] = useState(false);
   const [sincronizando, setSincronizando] = useState(false);
-  const [apiDisponivel, setApiDisponivel] = useState(false);
+  const [zerando, setZerando] = useState(false);
 
   async function carregar() {
     const [ms, res, cfg] = await Promise.all([
@@ -72,8 +71,6 @@ export default function Admin() {
     (async () => {
       try {
         await carregar();
-        // Verifica se a API key está configurada
-        setApiDisponivel(!!import.meta.env.VITE_API_FOOTBALL_KEY);
       } catch (e) {
         console.error(e);
       } finally {
@@ -215,37 +212,17 @@ export default function Admin() {
     flash("Resultado salvo.");
   }
 
-  // ---- Sincronizar resultados da API-Football ----
+  // ---- Sincronizar resultados (OpenFootball, fonte pública sem chave) ----
   async function sincronizarResultados() {
-    if (!confirm(
-      "Sincronizar resultados finalizados da API-Football?\n\n" +
-      "Isso vai buscar todos os jogos finalizados e atualizar automaticamente."
-    )) return;
-
     setSincronizando(true);
     try {
-      const fixtures = await getFinishedMatches();
-      let atualizados = 0;
-
-      for (const fixture of fixtures) {
-        const resultado = convertFixtureToResult(fixture);
-        if (!resultado) continue;
-
-        const matchId = findMatchId(fixture, matches);
-        if (!matchId) {
-          console.warn("Jogo não encontrado no Firestore:", fixture.teams.home.name, "vs", fixture.teams.away.name);
-          continue;
-        }
-
-        await saveResult(matchId, {
-          casa: resultado.golsCasa,
-          fora: resultado.golsFora,
-        });
-        atualizados++;
-      }
-
+      const { atualizados } = await sincronizarResultadosOpenFootball();
       await carregar();
-      flash(`${atualizados} resultado(s) sincronizado(s) da API-Football.`);
+      flash(
+        atualizados > 0
+          ? `${atualizados} resultado(s) atualizado(s) pela fonte pública.`
+          : "Nenhum resultado novo. Tudo já estava em dia."
+      );
     } catch (e) {
       console.error("Erro ao sincronizar:", e);
       flash("Erro ao sincronizar: " + e.message);
@@ -261,6 +238,31 @@ export default function Admin() {
   async function salvarGabarito() {
     await saveGabaritoEspeciais(gabarito);
     flash("Gabarito dos especiais salvo.");
+  }
+
+  // ---- Resetar o bolão para um novo início (acao destrutiva) ----
+  async function resetarTudo() {
+    if (!confirm(
+      "⚠️ RESETAR O BOLÃO?\n\n" +
+      "Isso vai APAGAR:\n" +
+      "• todos os palpites (grupos, mata-mata e especiais) de todo mundo\n" +
+      "• todos os participantes registrados (menos você)\n\n" +
+      "Os participantes voltam a aparecer assim que acessarem de novo.\n" +
+      "Jogos, resultados e configurações NÃO são afetados.\n\n" +
+      "Essa ação não pode ser desfeita. Continuar?"
+    )) return;
+    // Segunda confirmação por ser irreversível
+    if (!confirm("Tem certeza ABSOLUTA? Digite OK na próxima janela.\n\nConfirmar reset total?")) return;
+    setZerando(true);
+    try {
+      const { bets, users } = await resetarBolao(user.uid);
+      flash(`Reset concluído: ${bets} palpite(s) e ${users} participante(s) removidos.`);
+    } catch (e) {
+      console.error(e);
+      flash("Erro ao resetar: " + e.message);
+    } finally {
+      setZerando(false);
+    }
   }
 
   if (loading) {
@@ -348,34 +350,29 @@ export default function Admin() {
           Digite o placar final de cada jogo. O ranking recalcula sozinho.
         </p>
 
-        {apiDisponivel && matches.length > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            <button
-              className="btn azul"
-              onClick={sincronizarResultados}
-              disabled={sincronizando}
-            >
-              {sincronizando ? "Sincronizando…" : "🔄 Sincronizar resultados (API-Football)"}
-            </button>
-            <p style={{ color: "var(--texto-suave)", fontSize: "0.75rem", marginTop: 6 }}>
-              Atualiza automaticamente todos os jogos finalizados da API.
-            </p>
-          </div>
-        )}
-
-        {!apiDisponivel && (
-          <div className="aviso" style={{ marginBottom: 16 }}>
-            <span>ℹ️</span>
-            <div>
-              <strong>Sincronização automática desabilitada</strong><br />
-              Configure VITE_API_FOOTBALL_KEY no .env para habilitar a sincronização automática de resultados.
-            </div>
-          </div>
-        )}
+        <div style={{ marginBottom: 16 }}>
+          <button
+            className="btn azul"
+            onClick={sincronizarResultados}
+            disabled={sincronizando}
+          >
+            {sincronizando
+              ? <><span className="btn-spinner" /> Sincronizando…</>
+              : "🔄 Sincronizar resultados agora"}
+          </button>
+          <p style={{ color: "var(--texto-suave)", fontSize: "0.75rem", marginTop: 6 }}>
+            Busca os placares na fonte pública OpenFootball (grátis, sem chave) e
+            grava só o que mudou. Isso também acontece sozinho quando alguém abre
+            as abas <b>Hoje</b> ou <b>Ranking</b>. O lançamento manual abaixo é só
+            um complemento para corrigir algo pontual.
+          </p>
+        </div>
 
         {matches.length === 0 && (
-          <p style={{ color: "var(--texto-suave)" }}>
-            Importe o calendário primeiro.
+          <p style={{ color: "var(--texto-suave)", fontSize: "0.82rem" }}>
+            Os jogos da fase de grupos já vêm embutidos no app — a sincronização
+            funciona mesmo sem importar o calendário. Para editar placares à mão,
+            importe o calendário acima.
           </p>
         )}
         {matches.map((m) => {
@@ -439,6 +436,24 @@ export default function Admin() {
         ))}
         <button className="btn azul" style={{ marginTop: 12 }} onClick={salvarGabarito}>
           Salvar gabarito
+        </button>
+      </div>
+
+      <div className="bloco zona-perigo">
+        <h2>⚠️ Zona de perigo</h2>
+        <p style={{ color: "var(--texto-suave)", fontSize: "0.82rem", marginBottom: 12 }}>
+          <b>Resetar o bolão</b> apaga todos os palpites e todos os participantes
+          (menos você) para um começo do zero. Os participantes reaparecem quando
+          acessarem de novo. Jogos, resultados e configurações continuam intactos.
+        </p>
+        <button
+          className="btn perigo"
+          onClick={resetarTudo}
+          disabled={zerando}
+        >
+          {zerando
+            ? <><span className="btn-spinner" /> Resetando…</>
+            : "🧹 Resetar tudo (palpites + participantes)"}
         </button>
       </div>
 

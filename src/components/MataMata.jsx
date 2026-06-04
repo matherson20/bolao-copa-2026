@@ -75,6 +75,7 @@ export default function MataMata() {
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [toast, setToast] = useState("");
+  const [sujo, setSujo] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -89,6 +90,13 @@ export default function MataMata() {
       finally { setLoading(false); }
     })();
   }, [user.uid]);
+
+  useEffect(() => {
+    if (!sujo) return;
+    const handler = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [sujo]);
 
   // Derivações do chaveamento baseadas nos palpites da fase de grupos
   const gruposMap = useMemo(() => {
@@ -118,6 +126,7 @@ export default function MataMata() {
   function setGol(id, lado, valor) {
     const v = valor === "" ? null : Math.max(0, parseInt(valor, 10) || 0);
     setPalpites((p) => ({ ...p, [id]: { ...(p[id] || {}), [lado]: v } }));
+    setSujo(true);
   }
 
   async function salvar() {
@@ -125,6 +134,7 @@ export default function MataMata() {
     setSalvando(true);
     try {
       await saveBets(user.uid, { jogos: palpites });
+      setSujo(false);
       setToast("Palpites salvos!");
       setTimeout(() => setToast(""), 2200);
     } catch (e) {
@@ -214,8 +224,14 @@ export default function MataMata() {
       </div>
 
       {!travado && (
-        <button className="btn-salvar" onClick={salvar} disabled={salvando}>
-          {salvando ? "Salvando…" : "💾 Salvar palpites"}
+        <button
+          className={`btn-salvar${sujo ? " sujo" : ""}`}
+          onClick={salvar}
+          disabled={salvando || !sujo}
+        >
+          {salvando
+            ? <><span className="btn-spinner" /> Salvando…</>
+            : "💾 Salvar palpites"}
         </button>
       )}
 

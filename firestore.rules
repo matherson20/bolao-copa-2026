@@ -43,6 +43,8 @@ service cloud.firestore {
           resource.data.isAdmin == true          // ja era admin, pode atualizar
           || request.resource.data.isAdmin == false  // nao era admin, continua nao sendo
         );
+      // Admin pode remover outros usuarios (usado para resetar o bolao).
+      allow delete: if ehAdmin();
     }
 
     // Jogos: leitura para logados, escrita so admin.
@@ -52,11 +54,13 @@ service cloud.firestore {
     }
 
     // Palpites: cada um escreve no proprio doc e SO antes da trava.
+    // Admin pode apagar qualquer doc (usado para zerar a base entre testes).
     match /bets/{uid} {
       allow read: if logado();
       allow write: if logado()
         && request.auth.uid == uid
         && antesDaTrava();
+      allow delete: if ehAdmin();
     }
 
     // Resultados oficiais e gabarito: leitura para logados, escrita so admin.

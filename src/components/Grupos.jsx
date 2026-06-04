@@ -8,6 +8,24 @@ import { calcularClassificacaoGrupo } from "../lib/classificacao";
 
 const JOGOS_GRUPOS = gerarJogosFaseGrupos();
 
+// Dicas (placeholders) por palpite especial
+const ESPECIAIS_PLACEHOLDER = {
+  campeao: "Ex.: Brasil",
+  artilheiro: "Nome do jogador",
+  melhorJogador: "Nome do jogador",
+  surpresa: "Seleção que vai mais longe que o esperado",
+  decepcao: "Seleção forte que vai decepcionar",
+};
+
+// Ícone de cada palpite especial
+const ESPECIAIS_ICONE = {
+  campeao: "🏆",
+  artilheiro: "⚽",
+  melhorJogador: "⭐",
+  surpresa: "🚀",
+  decepcao: "💤",
+};
+
 function fmtData(iso) {
   if (!iso) return "";
   try {
@@ -126,6 +144,7 @@ export default function Grupos() {
   const [toast, setToast] = useState("");
   const [secoes, setSecoes] = useState({ especiais: true, grupos: true });
   const [gruposAbertos, setGruposAbertos] = useState({});
+  const [sujo, setSujo] = useState(false); // há alterações não salvas?
 
   useEffect(() => {
     (async () => {
@@ -143,6 +162,14 @@ export default function Grupos() {
     })();
   }, [user.uid]);
 
+  // Avisa o usuário se ele tentar sair com palpites não salvos
+  useEffect(() => {
+    if (!sujo) return;
+    const handler = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [sujo]);
+
   const GRUPOS_LISTA = useMemo(() => {
     const map = {};
     JOGOS_GRUPOS.forEach((m) => { (map[m.grupo] = map[m.grupo] || []).push(m); });
@@ -154,6 +181,12 @@ export default function Grupos() {
   function setGol(id, lado, valor) {
     const v = valor === "" ? null : Math.max(0, parseInt(valor, 10) || 0);
     setPalpites((p) => ({ ...p, [id]: { ...(p[id] || {}), [lado]: v } }));
+    setSujo(true);
+  }
+
+  function setEspecial(chave, valor) {
+    setEspeciais((p) => ({ ...p, [chave]: valor }));
+    setSujo(true);
   }
 
   async function salvar() {
@@ -161,6 +194,7 @@ export default function Grupos() {
     setSalvando(true);
     try {
       await saveBets(user.uid, { jogos: palpites, especiais });
+      setSujo(false);
       setToast("Palpites salvos!");
       setTimeout(() => setToast(""), 2200);
     } catch (e) {
@@ -170,11 +204,21 @@ export default function Grupos() {
     } finally { setSalvando(false); }
   }
 
+  const ESPECIAIS_CHAVES = Object.keys(ESPECIAIS_LABEL);
+  const totalEspeciais = ESPECIAIS_CHAVES.length;
+  const preenchidosEspeciais = ESPECIAIS_CHAVES.filter(
+    (c) => (especiais[c] || "").trim() !== ""
+  ).length;
+
   const totalJogos = JOGOS_GRUPOS.length;
   const preenchidos = JOGOS_GRUPOS.filter((m) => {
     const p = palpites[m.id];
     return p && p.casa != null && p.fora != null;
   }).length;
+
+  const totalGeral = totalJogos + totalEspeciais;
+  const feitoGeral = preenchidos + preenchidosEspeciais;
+  const pctGeral = totalGeral ? Math.round((feitoGeral / totalGeral) * 100) : 0;
 
   if (loading) return <div className="centro"><div className="spinner" />Carregando…</div>;
 
@@ -192,29 +236,43 @@ export default function Grupos() {
         </div>
       )}
 
+      {/* PROGRESSO GERAL */}
+      <div className="progresso-geral">
+        <div className="pg-topo">
+          <span className="pg-label">Seu progresso</span>
+          <span className="pg-num">{feitoGeral}/{totalGeral} · {pctGeral}%</span>
+        </div>
+        <div className="pg-barra">
+          <div className="pg-preenchido" style={{ width: `${pctGeral}%` }} />
+        </div>
+      </div>
+
       {/* ESPECIAIS */}
       <div className="secao">
         <SecaoHeader icone="🌟" titulo="Palpites Especiais"
-          subtitulo="Campeão, artilheiro e surpresa — pontos bônus"
-          aberta={secoes.especiais} onToggle={() => setSecoes(s => ({ ...s, especiais: !s.especiais }))} />
+          subtitulo="Campeão, artilheiro, surpresa e mais — pontos bônus"
+          aberta={secoes.especiais} onToggle={() => setSecoes(s => ({ ...s, especiais: !s.especiais }))}
+          badge={`${preenchidosEspeciais}/${totalEspeciais}`} />
         {secoes.especiais && (
           <div className="secao-corpo">
             <div className="especiais-grid">
-              {Object.keys(ESPECIAIS_LABEL).map((chave) => (
-                <div className="campo" key={chave}>
-                  <label>
-                    {ESPECIAIS_LABEL[chave]}
-                    <span className="pts-label"> +{PONTOS_ESPECIAIS[chave]}pts</span>
-                  </label>
-                  <input type="text" value={especiais[chave] || ""} disabled={travado}
-                    placeholder={
-                      chave === "campeao" ? "Ex.: Brasil" :
-                      chave === "artilheiro" ? "Nome do jogador" :
-                      chave === "melhorJogador" ? "Nome do jogador" : "Seleção surpresa"
-                    }
-                    onChange={(e) => setEspeciais(p => ({ ...p, [chave]: e.target.value }))} />
-                </div>
-              ))}
+              {Object.keys(ESPECIAIS_LABEL).map((chave) => {
+                const preenchido = (especiais[chave] || "").trim() !== "";
+                return (
+                  <div className={`especial-card${preenchido ? " preenchido" : ""}`} key={chave}>
+                    <div className="especial-topo">
+                      <span className="especial-icone">{ESPECIAIS_ICONE[chave] || "🌟"}</span>
+                      <div className="especial-info">
+                        <span className="especial-nome">{ESPECIAIS_LABEL[chave]}</span>
+                        <span className="especial-pts">+{PONTOS_ESPECIAIS[chave]} pts</span>
+                      </div>
+                    </div>
+                    <input type="text" value={especiais[chave] || ""} disabled={travado}
+                      placeholder={ESPECIAIS_PLACEHOLDER[chave] || ""}
+                      onChange={(e) => setEspecial(chave, e.target.value)} />
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -283,8 +341,14 @@ export default function Grupos() {
       </div>
 
       {!travado && (
-        <button className="btn-salvar" onClick={salvar} disabled={salvando}>
-          {salvando ? "Salvando…" : "💾 Salvar palpites"}
+        <button
+          className={`btn-salvar${sujo ? " sujo" : ""}`}
+          onClick={salvar}
+          disabled={salvando || !sujo}
+        >
+          {salvando
+            ? <><span className="btn-spinner" /> Salvando…</>
+            : "💾 Salvar palpites"}
         </button>
       )}
 

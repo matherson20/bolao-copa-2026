@@ -6,6 +6,7 @@ import {
   getResults,
 } from "../lib/db";
 import { totalDoUsuario, ordenarRanking } from "../lib/scoring";
+import { sincronizarResultadosOpenFootball } from "../lib/resultsSync";
 
 export default function Ranking() {
   const [linhas, setLinhas] = useState([]);
@@ -14,6 +15,9 @@ export default function Ranking() {
   useEffect(() => {
     (async () => {
       try {
+        // Atualiza resultados pela fonte pública antes de calcular (grava só se admin).
+        try { await sincronizarResultadosOpenFootball(); } catch { /* ignora */ }
+
         const [users, allBets, matches, res] = await Promise.all([
           getAllUsers(),
           getAllBets(),

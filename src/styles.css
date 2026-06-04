@@ -1674,3 +1674,268 @@ table.palpites tbody tr:hover td { background: var(--verde-claro); }
   border-color: #fecaca !important;
   color: #991b1b !important;
 }
+
+/* ─── Barra de progresso geral ─────────────────────────────────── */
+.progresso-geral {
+  background: var(--card);
+  border: 1px solid var(--borda);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-top: 12px;
+  box-shadow: var(--sombra-sm);
+}
+
+.pg-topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.pg-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--texto-2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.pg-num {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-weight: 800;
+  font-size: 0.82rem;
+  color: var(--verde-escuro);
+}
+
+.pg-barra {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg-alt);
+  overflow: hidden;
+}
+
+.pg-preenchido {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--verde), var(--ouro));
+  transition: width 0.35s ease;
+  min-width: 2px;
+}
+
+/* ─── Cards de palpites especiais ──────────────────────────────── */
+.especial-card {
+  background: var(--card);
+  border: 1px solid var(--borda);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.especial-card.preenchido {
+  border-color: var(--verde-mid);
+  background: rgba(0,168,107,0.03);
+}
+
+.especial-topo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+
+.especial-icone {
+  font-size: 1.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.12));
+}
+
+.especial-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.especial-nome {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--texto);
+  line-height: 1.2;
+}
+
+.especial-pts {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--verde);
+}
+
+.especial-card input[type="text"] {
+  width: 100%;
+  padding: 9px 12px;
+  border: 2px solid var(--borda);
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  font-family: inherit;
+  color: var(--texto);
+  background: #fff;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.especial-card input[type="text"]:focus {
+  outline: none;
+  border-color: var(--verde);
+  background: var(--verde-claro);
+  box-shadow: 0 0 0 3px rgba(0,168,107,0.12);
+}
+
+.especial-card input[type="text"]:disabled {
+  background: var(--bg);
+  color: var(--texto-suave);
+}
+
+/* ─── Botão salvar: estados sujo / salvo ───────────────────────── */
+.btn-salvar:disabled:not(.sujo) {
+  background: var(--verde-escuro);
+  opacity: 0.85;
+  box-shadow: none;
+  cursor: default;
+}
+
+.btn-salvar.sujo {
+  animation: pulso-salvar 2s ease-in-out infinite;
+}
+
+@keyframes pulso-salvar {
+  0%, 100% { box-shadow: 0 8px 24px rgba(0,168,107,0.35); }
+  50% { box-shadow: 0 8px 30px rgba(0,168,107,0.6); }
+}
+
+/* Spinner pequeno dentro de botões — herda a cor do texto do botão */
+.btn-spinner {
+  width: 15px;
+  height: 15px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  opacity: 0.85;
+  border-radius: 50%;
+  display: inline-block;
+  vertical-align: -2px;
+  animation: girar 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+/* ─── Admin: zona de perigo ────────────────────────────────────── */
+.bloco.zona-perigo {
+  margin-top: 20px;
+  border-color: #fecaca;
+  background: #fff8f8;
+}
+
+.bloco.zona-perigo h2 {
+  color: var(--eliminado);
+  font-size: 1.05rem;
+}
+
+/* ─── Hoje: placar oficial ─────────────────────────────────────── */
+.hoje-placar-oficial {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-weight: 800;
+  font-size: 1.25rem;
+  color: var(--verde-escuro);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.hoje-placar-oficial span {
+  color: var(--texto-fraco);
+  font-size: 0.9rem;
+  margin: 0 2px;
+}
+
+/* ─── Hoje: status do palpite (✓/✗/exato) ──────────────────────── */
+.hoje-status {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-weight: 800;
+  font-size: 0.72rem;
+  padding: 2px 7px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.st-exato     { background: var(--ouro-claro);  color: #b45309; border: 1px solid var(--ouro-mid); }
+.st-resultado { background: var(--verde-claro); color: var(--verde-escuro); border: 1px solid var(--verde-mid); }
+.st-errado    { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+.st-pendente  { background: var(--bg); color: var(--texto-fraco); border: 1px solid var(--borda); }
+
+/* ─── Líder do dia ─────────────────────────────────────────────── */
+.lider-dia {
+  background: var(--card);
+  border: 1px solid var(--borda);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  box-shadow: var(--sombra-sm);
+}
+.lider-dia-titulo {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: var(--texto);
+  margin-bottom: 10px;
+}
+.lider-dia-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lider-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+}
+.lider-item.topo {
+  background: linear-gradient(135deg, var(--ouro-claro), #fff);
+  border: 1px solid var(--ouro-mid);
+}
+.lider-pos {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: var(--texto-suave);
+  width: 22px;
+  flex-shrink: 0;
+}
+.lider-item.topo .lider-pos { color: var(--ouro); }
+.lider-avatar {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 1.5px solid var(--borda);
+  flex-shrink: 0;
+}
+.lider-avatar-fb {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: var(--verde);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.lider-nome {
+  flex: 1;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--texto);
+}
+.lider-pts {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: var(--verde);
+  flex-shrink: 0;
+}
+.lider-item.topo .lider-pts { color: var(--ouro); }

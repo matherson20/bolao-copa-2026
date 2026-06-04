@@ -4,6 +4,7 @@ import {
   getDoc,
   getDocs,
   setDoc,
+  deleteDoc,
   query,
   orderBy,
 } from "firebase/firestore";
@@ -85,6 +86,33 @@ export async function getAllBets() {
 
 export async function saveBets(uid, data) {
   await setDoc(doc(db, "bets", uid), data, { merge: true });
+}
+
+// Apaga TODOS os palpites de TODOS os participantes (acao de admin).
+// Retorna a quantidade de documentos removidos.
+export async function deleteAllBets() {
+  const snap = await getDocs(collection(db, "bets"));
+  await Promise.all(snap.docs.map((d) => deleteDoc(doc(db, "bets", d.id))));
+  return snap.docs.length;
+}
+
+// Apaga todos os usuarios registrados, EXCETO o uid informado (o admin atual).
+// Os demais sao recriados automaticamente (ensureUser) quando acessarem de novo.
+// Retorna a quantidade de documentos removidos.
+export async function deleteAllUsers(exceptUid) {
+  const snap = await getDocs(collection(db, "users"));
+  const alvos = snap.docs.filter((d) => d.id !== exceptUid);
+  await Promise.all(alvos.map((d) => deleteDoc(doc(db, "users", d.id))));
+  return alvos.length;
+}
+
+// Reset completo do bolao para um novo inicio: apaga palpites e usuarios
+// (menos o admin atual). NAO mexe em jogos (matches) nem na config (trava).
+// Retorna { bets, users }.
+export async function resetarBolao(adminUid) {
+  const bets = await deleteAllBets();
+  const users = await deleteAllUsers(adminUid);
+  return { bets, users };
 }
 
 // ---- Resultados oficiais ----

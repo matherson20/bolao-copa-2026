@@ -30,6 +30,7 @@ export const PONTOS_ESPECIAIS = {
   artilheiro: 12,
   melhorJogador: 12,
   surpresa: 10,
+  decepcao: 10,
 };
 
 export const ESPECIAIS_LABEL = {
@@ -37,6 +38,7 @@ export const ESPECIAIS_LABEL = {
   artilheiro: "Artilheiro",
   melhorJogador: "Melhor jogador",
   surpresa: "Seleção surpresa",
+  decepcao: "Seleção decepção da Copa",
 };
 
 const KNOCKOUT = new Set(["r32", "oitavas", "quartas", "semi", "terceiro", "final"]);
@@ -77,6 +79,28 @@ export function pontosDoJogo(palpite, resultado, fase) {
   }
 
   return pts;
+}
+
+// Classifica um palpite contra o resultado oficial de um jogo.
+// Retorna { status, pts } onde status ∈ "exato" | "resultado" | "errado" | "pendente".
+// "pendente" = ainda não há resultado oficial ou o palpite está incompleto.
+export function statusDoPalpite(palpite, resultado, fase = "grupos") {
+  const semPalpite = !palpite || palpite.casa == null || palpite.fora == null;
+  const semResultado = !resultado || resultado.casa == null || resultado.fora == null;
+  if (semPalpite || semResultado) return { status: "pendente", pts: 0 };
+
+  const pts = pontosDoJogo(palpite, resultado, fase);
+  const exato =
+    Number(palpite.casa) === Number(resultado.casa) &&
+    Number(palpite.fora) === Number(resultado.fora);
+  if (exato) return { status: "exato", pts };
+
+  const mesmoResultado =
+    resultadoDoPlacar(Number(palpite.casa), Number(palpite.fora)) ===
+    resultadoDoPlacar(Number(resultado.casa), Number(resultado.fora));
+  if (mesmoResultado) return { status: "resultado", pts };
+
+  return { status: "errado", pts: 0 };
 }
 
 // Pontos dos palpites especiais. gabarito = respostas oficiais (doc results/_especiais).
