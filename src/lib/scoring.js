@@ -34,7 +34,7 @@ export const PONTOS_ESPECIAIS = {
 };
 
 export const ESPECIAIS_LABEL = {
-  campeao: "Campeão",
+  campeao: "Seleção campeã",
   artilheiro: "Artilheiro",
   melhorJogador: "Melhor jogador",
   surpresa: "Seleção surpresa",

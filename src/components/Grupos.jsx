@@ -3,16 +3,32 @@ import { useAuth } from "../lib/useAuth.jsx";
 import { getBets, saveBets, getConfig } from "../lib/db";
 import { bandeira } from "../lib/teams";
 import { ESPECIAIS_LABEL, PONTOS_ESPECIAIS } from "../lib/scoring";
-import { gerarJogosFaseGrupos } from "../lib/seedData";
+import { gerarJogosFaseGrupos, getTodasSelecoes } from "../lib/seedData";
 import { calcularClassificacaoGrupo } from "../lib/classificacao";
+import SelectBusca from "./SelectBusca.jsx";
+import { soDigitosKeyDown, soDigitosPaste } from "../lib/inputs";
+import { JOGADORES_2026 } from "../lib/players2026";
 
 const JOGOS_GRUPOS = gerarJogosFaseGrupos();
+const SELECOES = getTodasSelecoes();
 
-// Dicas (placeholders) por palpite especial
+// Opções de jogador para os dropdowns de artilheiro/melhor jogador.
+// value único e auto-descritivo: "Nome (Seleção)". É exatamente o que é salvo
+// e comparado com o gabarito, garantindo validação sem divergência.
+const JOGADORES_OPCOES = JOGADORES_2026.map((j) => ({
+  value: `${j.nome} (${j.selecao})`,
+  label: j.nome,
+  sub: j.selecao,
+}));
+
+// Quais especiais usam lista de jogador (resto usa lista de seleção)
+const ESPECIAIS_DE_JOGADOR = new Set(["artilheiro", "melhorJogador"]);
+
+// Dica curta por palpite especial (texto auxiliar)
 const ESPECIAIS_PLACEHOLDER = {
-  campeao: "Ex.: Brasil",
-  artilheiro: "Nome do jogador",
-  melhorJogador: "Nome do jogador",
+  campeao: "Escolha a seleção campeã",
+  artilheiro: "Busque o jogador artilheiro",
+  melhorJogador: "Busque o melhor jogador",
   surpresa: "Seleção que vai mais longe que o esperado",
   decepcao: "Seleção forte que vai decepcionar",
 };
@@ -114,13 +130,15 @@ function JogoRow({ jogo, palpite, travado, onChange }) {
       </div>
       <div className="jr-placar">
         <input
-          type="number" min="0" inputMode="numeric"
+          type="number" min="0" inputMode="numeric" maxLength={2}
+          onKeyDown={soDigitosKeyDown} onPaste={soDigitosPaste}
           value={p.casa ?? ""} disabled={travado}
           onChange={(e) => onChange("casa", e.target.value)}
         />
         <span className="jr-x">×</span>
         <input
-          type="number" min="0" inputMode="numeric"
+          type="number" min="0" inputMode="numeric" maxLength={2}
+          onKeyDown={soDigitosKeyDown} onPaste={soDigitosPaste}
           value={p.fora ?? ""} disabled={travado}
           onChange={(e) => onChange("fora", e.target.value)}
         />
@@ -267,9 +285,24 @@ export default function Grupos() {
                         <span className="especial-pts">+{PONTOS_ESPECIAIS[chave]} pts</span>
                       </div>
                     </div>
-                    <input type="text" value={especiais[chave] || ""} disabled={travado}
-                      placeholder={ESPECIAIS_PLACEHOLDER[chave] || ""}
-                      onChange={(e) => setEspecial(chave, e.target.value)} />
+                    {ESPECIAIS_DE_JOGADOR.has(chave) ? (
+                      <SelectBusca
+                        value={especiais[chave] || ""}
+                        options={JOGADORES_OPCOES}
+                        disabled={travado}
+                        placeholder={ESPECIAIS_PLACEHOLDER[chave] || "Selecione o jogador"}
+                        onChange={(v) => setEspecial(chave, v)}
+                      />
+                    ) : (
+                      <SelectBusca
+                        value={especiais[chave] || ""}
+                        options={SELECOES}
+                        disabled={travado}
+                        placeholder={ESPECIAIS_PLACEHOLDER[chave] || "Selecione a seleção"}
+                        renderIcon={(t) => bandeira(t)}
+                        onChange={(v) => setEspecial(chave, v)}
+                      />
+                    )}
                   </div>
                 );
               })}

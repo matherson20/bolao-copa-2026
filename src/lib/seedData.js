@@ -127,6 +127,15 @@ function slug(s) {
     .toLowerCase();
 }
 
+// Lista canônica das 48 seleções da Copa 2026, em ordem alfabética.
+// Usada nos dropdowns dos palpites especiais e do gabarito (Admin) para
+// garantir que todos escolham exatamente o mesmo texto.
+export function getTodasSelecoes() {
+  return Object.values(GRUPOS_2026)
+    .flat()
+    .sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+
 export function gerarJogosFaseGrupos() {
   return JOGOS_OFICIAIS.map((j) => ({
     id: `g-${slug(j.grupo)}-r${j.rodada}-${slug(j.casa)}-${slug(j.fora)}`,

@@ -13,7 +13,18 @@ import { useAuth } from "../lib/useAuth.jsx";
 import { bandeira } from "../lib/teams";
 import { ESPECIAIS_LABEL } from "../lib/scoring";
 import { sincronizarResultadosOpenFootball } from "../lib/resultsSync";
-import { getDadosSeed } from "../lib/seedData";
+import { getDadosSeed, getTodasSelecoes } from "../lib/seedData";
+import SelectBusca from "./SelectBusca.jsx";
+import { soDigitosKeyDown, soDigitosPaste } from "../lib/inputs";
+import { JOGADORES_2026 } from "../lib/players2026";
+
+const SELECOES = getTodasSelecoes();
+const JOGADORES_OPCOES = JOGADORES_2026.map((j) => ({
+  value: `${j.nome} (${j.selecao})`,
+  label: j.nome,
+  sub: j.selecao,
+}));
+const ESPECIAIS_DE_JOGADOR = new Set(["artilheiro", "melhorJogador"]);
 
 // Fonte publica e gratuita do calendario (openfootball, dominio publico, sem API key).
 const FONTE_CALENDARIO =
@@ -388,6 +399,9 @@ export default function Admin() {
                   type="number"
                   min="0"
                   inputMode="numeric"
+                  maxLength={2}
+                  onKeyDown={soDigitosKeyDown}
+                  onPaste={soDigitosPaste}
                   value={r.casa ?? ""}
                   onChange={(e) => setResLocal(m.id, "casa", e.target.value)}
                 />
@@ -396,6 +410,9 @@ export default function Admin() {
                   type="number"
                   min="0"
                   inputMode="numeric"
+                  maxLength={2}
+                  onKeyDown={soDigitosKeyDown}
+                  onPaste={soDigitosPaste}
                   value={r.fora ?? ""}
                   onChange={(e) => setResLocal(m.id, "fora", e.target.value)}
                 />
@@ -421,17 +438,28 @@ export default function Admin() {
       <div className="bloco">
         <h2>Gabarito dos especiais</h2>
         <p style={{ color: "var(--texto-suave)", fontSize: "0.82rem", marginBottom: 6 }}>
-          Preencha ao fim da competição. Deve bater (sem diferenciar maiúsculas)
-          com o que os participantes escreveram.
+          Preencha ao fim da competição escolhendo a seleção correta. Como os
+          participantes também escolhem da mesma lista, a validação é exata.
         </p>
         {Object.keys(ESPECIAIS_LABEL).map((chave) => (
           <div className="campo" key={chave}>
             <label>{ESPECIAIS_LABEL[chave]}</label>
-            <input
-              type="text"
-              value={gabarito[chave] || ""}
-              onChange={(e) => setGab(chave, e.target.value)}
-            />
+            {ESPECIAIS_DE_JOGADOR.has(chave) ? (
+              <SelectBusca
+                value={gabarito[chave] || ""}
+                options={JOGADORES_OPCOES}
+                placeholder="Selecione o jogador"
+                onChange={(v) => setGab(chave, v)}
+              />
+            ) : (
+              <SelectBusca
+                value={gabarito[chave] || ""}
+                options={SELECOES}
+                placeholder="Selecione a seleção"
+                renderIcon={(t) => bandeira(t)}
+                onChange={(v) => setGab(chave, v)}
+              />
+            )}
           </div>
         ))}
         <button className="btn azul" style={{ marginTop: 12 }} onClick={salvarGabarito}>

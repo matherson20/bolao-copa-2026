@@ -8,6 +8,7 @@ import {
   getClassificados, gerarTrintaEDois, gerarOitavas,
   gerarQuartas, gerarSemis, gerarFinal, faseCompleta,
 } from "../lib/playoffs";
+import { soDigitosKeyDown, soDigitosPaste } from "../lib/inputs";
 
 const JOGOS_GRUPOS = gerarJogosFaseGrupos();
 
@@ -29,11 +30,13 @@ function JogoMata({ jogo, palpite, travado, bloqueado, onChange }) {
         <span className="jm-nome">{jogo?.timeCasa || "A definir"}</span>
       </div>
       <div className="jm-placar">
-        <input type="number" min="0" inputMode="numeric"
+        <input type="number" min="0" inputMode="numeric" maxLength={2}
+          onKeyDown={soDigitosKeyDown} onPaste={soDigitosPaste}
           value={p.casa ?? ""} disabled={travado || off}
           onChange={(e) => onChange("casa", e.target.value)} />
         <span className="jm-x">×</span>
-        <input type="number" min="0" inputMode="numeric"
+        <input type="number" min="0" inputMode="numeric" maxLength={2}
+          onKeyDown={soDigitosKeyDown} onPaste={soDigitosPaste}
           value={p.fora ?? ""} disabled={travado || off}
           onChange={(e) => onChange("fora", e.target.value)} />
       </div>

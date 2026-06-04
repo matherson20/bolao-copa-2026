@@ -1939,3 +1939,130 @@ table.palpites tbody tr:hover td { background: var(--verde-claro); }
   flex-shrink: 0;
 }
 .lider-item.topo .lider-pts { color: var(--ouro); }
+
+/* ─── SelectBusca (dropdown com busca) ─────────────────────────── */
+.sb {
+  position: relative;
+  width: 100%;
+}
+
+.sb-controle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 2px solid var(--borda);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  font-family: inherit;
+  font-size: 0.88rem;
+  color: var(--texto);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.sb-controle:hover:not(:disabled) { border-color: var(--borda-forte); }
+.sb-controle.preenchido {
+  border-color: var(--verde-mid);
+  background: var(--verde-claro);
+}
+.sb-disabled .sb-controle,
+.sb-controle:disabled {
+  background: var(--bg);
+  color: var(--texto-suave);
+  cursor: default;
+}
+
+.sb-valor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.sb-icone { font-size: 1.15rem; line-height: 1; flex-shrink: 0; }
+.sb-placeholder { color: var(--texto-fraco); font-weight: 400; }
+
+.sb-chevron {
+  font-size: 0.6rem;
+  color: var(--texto-fraco);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+/* Painel renderizado em portal (position: fixed vem inline pelo JS). */
+.sb-painel {
+  z-index: 300; /* acima do header/bottom-nav (z:100) e botão salvar (z:50) */
+  background: #fff;
+  border: 1px solid var(--borda-forte);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--sombra-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  margin: 4px 0; /* respiro entre botão e painel */
+}
+
+.sb-busca {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--borda);
+  padding: 10px 12px;
+  font-size: 0.88rem;
+  font-family: inherit;
+  outline: none;
+}
+.sb-busca:focus { background: var(--verde-claro); }
+
+.sb-lista {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  flex: 1;
+}
+
+.sb-opcao {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+.sb-opcao .sb-check { margin-left: auto; color: var(--verde); font-weight: 800; }
+.sb-opcao.destaque { background: var(--verde-claro); }
+.sb-opcao.atual { font-weight: 700; }
+.sb-limpar {
+  color: var(--texto-suave);
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--borda);
+  border-radius: 0;
+  margin-bottom: 2px;
+}
+.sb-vazio {
+  padding: 12px;
+  text-align: center;
+  color: var(--texto-fraco);
+  font-size: 0.85rem;
+}
+
+.sb-sub { color: var(--texto-fraco); font-weight: 400; }
+.sb-opcao-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-label-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-mais {
+  padding: 8px 10px;
+  text-align: center;
+  color: var(--texto-fraco);
+  font-size: 0.78rem;
+  font-style: italic;
+}
