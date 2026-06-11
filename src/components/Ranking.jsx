@@ -5,8 +5,14 @@ import {
   getMatches,
   getResults,
 } from "../lib/db";
-import { totalDoUsuario, ordenarRanking } from "../lib/scoring";
+import { totalDoUsuario, ordenarRanking, comColocacoes } from "../lib/scoring";
 import { sincronizarResultadosOpenFootball } from "../lib/resultsSync";
+import { gerarJogosFaseGrupos } from "../lib/seedData";
+
+// Jogos da fase de grupos são dados locais (seed), não vivem na coleção
+// `matches` do Firestore — só o mata-mata vive lá. O ranking precisa somar os
+// dois universos, senão os resultados dos grupos nunca pontuam.
+const JOGOS_GRUPOS = gerarJogosFaseGrupos();
 
 export default function Ranking() {
   const [linhas, setLinhas] = useState([]);
@@ -24,11 +30,17 @@ export default function Ranking() {
           getMatches(),
           getResults(),
         ]);
+        // Mata-mata (Firestore) só conta quando os times já estão definidos.
+        const jogosMata = (matches || []).filter(
+          (m) => m.fase && m.fase !== "grupos" && m.timeCasa && m.timeFora
+        );
+        const todosJogos = [...JOGOS_GRUPOS, ...jogosMata];
+
         const calc = users.map((u) => {
           const palpites = allBets[u.uid] || { jogos: {}, especiais: {} };
           const { total, placaresExatos, resultadosCertos } = totalDoUsuario({
             palpites,
-            matches,
+            matches: todosJogos,
             resultados: res.resultados,
             gabaritoEspeciais: res.gabaritoEspeciais,
           });
@@ -41,7 +53,7 @@ export default function Ranking() {
             resultadosCertos,
           };
         });
-        setLinhas(ordenarRanking(calc));
+        setLinhas(comColocacoes(ordenarRanking(calc)));
       } catch (e) {
         console.error(e);
       } finally {
@@ -63,11 +75,15 @@ export default function Ranking() {
     <div className="bloco">
       <h2>Ranking</h2>
       <p style={{ color: "var(--texto-suave)", fontSize: "0.82rem", marginBottom: 6 }}>
-        Atualiza conforme os resultados são lançados. Desempate: placares exatos.
+        Desempate: mais placares exatos, depois mais resultados certos. Empate
+        total divide a mesma colocação.
       </p>
-      {linhas.map((l, i) => (
-        <div className={`rank-linha ${i === 0 ? "top1" : ""}`} key={l.uid}>
-          <div className="pos">{i + 1}º</div>
+      {linhas.map((l) => (
+        <div className={`rank-linha ${l.posicao === 1 ? "top1" : ""}`} key={l.uid}>
+          <div className="pos">
+            {l.empatado && <span className="pos-igual" title="Empatado">=</span>}
+            {l.posicao}º
+          </div>
           <div className="quem">
             {l.foto ? (
               <img src={l.foto} alt="" />

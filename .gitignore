@@ -5,3 +5,8 @@ dist
 *.log
 .DS_Store
 .vite
+
+# Credenciais de admin do Firebase (NUNCA versionar — acesso total ao projeto)
+serviceAccount.json
+serviceAccount*.json
+*-firebase-adminsdk-*.json

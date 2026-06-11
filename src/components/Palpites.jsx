@@ -5,6 +5,7 @@ import { bandeira } from "../lib/teams";
 import { ESPECIAIS_LABEL, PONTOS_ESPECIAIS, FASE_LABEL } from "../lib/scoring";
 import { gerarJogosFaseGrupos } from "../lib/seedData";
 import { calcularClassificacaoGrupo } from "../lib/classificacao";
+import { gruposTravados } from "../lib/faseConfig";
 
 // Jogos da fase de grupos são dados fixos — vêm do seed local, não do Firestore
 const JOGOS_GRUPOS = gerarJogosFaseGrupos();
@@ -185,7 +186,7 @@ export default function Palpites() {
     return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
   }, []);
 
-  const travado = travaTs ? Date.now() >= new Date(travaTs).getTime() : false;
+  const travado = gruposTravados(travaTs);
   const mataTravado = travaMataMataTs ? Date.now() >= new Date(travaMataMataTs).getTime() : false;
 
   // ── Handlers ────────────────────────────────────────────────────────────────

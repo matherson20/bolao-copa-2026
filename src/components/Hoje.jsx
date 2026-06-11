@@ -4,6 +4,7 @@ import { gerarJogosFaseGrupos } from "../lib/seedData";
 import { bandeira } from "../lib/teams";
 import { statusDoPalpite } from "../lib/scoring";
 import { sincronizarResultadosOpenFootball } from "../lib/resultsSync";
+import { gruposTravados } from "../lib/faseConfig";
 
 const JOGOS_GRUPOS = gerarJogosFaseGrupos();
 const FASES_MATA = ["r32", "oitavas", "quartas", "semi", "terceiro", "final"];
@@ -63,8 +64,7 @@ export default function Hoje() {
         setAllBets(bets);
         setResultados(res.resultados || {});
         setJogosMata((matches || []).filter((m) => FASES_MATA.includes(m.fase) && m.timeCasa && m.timeFora));
-        const ts = cfg?.travaGruposTimestamp;
-        setTravado(ts ? Date.now() >= new Date(ts).getTime() : false);
+        setTravado(gruposTravados(cfg?.travaGruposTimestamp));
       } catch (e) { console.error(e); }
       finally { setLoading(false); setSincronizando(false); }
     })();
@@ -76,6 +76,14 @@ export default function Hoje() {
     d.setHours(0, 0, 0, 0);
     return d.toISOString();
   }, [diaOffset]);
+
+  // Os palpites de todos só aparecem quando o dia já chegou (início do dia
+  // alvo <= agora). Dias futuros ficam bloqueados; hoje e dias passados liberam.
+  // Também exige que a Copa tenha começado (trava) — antes disso nada é revelado.
+  const diaLiberado = useMemo(() => {
+    const inicioDoDia = new Date(dataAlvoISO).getTime();
+    return travado && Date.now() >= inicioDoDia;
+  }, [dataAlvoISO, travado]);
 
   // Jogos do dia = fase de grupos (local) + mata-mata (Firestore)
   const jogosDoDia = useMemo(() => {
@@ -154,10 +162,15 @@ export default function Hoje() {
         </div>
       ) : (
         <>
-          {!travado && (
+          {!travado ? (
             <div className="aviso" style={{ marginBottom: 12 }}>
               <span>🙈</span>
               <span>Os palpites de todos ficam visíveis após o início da Copa.</span>
+            </div>
+          ) : !diaLiberado && (
+            <div className="aviso" style={{ marginBottom: 12 }}>
+              <span>🔒</span>
+              <span>Dia futuro: os palpites destes jogos só aparecem quando o dia chegar.</span>
             </div>
           )}
 
@@ -197,7 +210,7 @@ export default function Hoje() {
                   </div>
 
                   {/* Palpites de todos */}
-                  {travado && users.length > 0 ? (
+                  {diaLiberado && users.length > 0 ? (
                     <div className="hoje-palpites">
                       <div className="hoje-palpites-label">Palpites</div>
                       <div className="hoje-palpites-lista">
@@ -228,7 +241,9 @@ export default function Hoje() {
                     </div>
                   ) : (
                     <div className="hoje-antes-trava">
-                      🙈 Palpites ocultos até a Copa começar
+                      {!travado
+                        ? "🙈 Palpites ocultos até a Copa começar"
+                        : "🔒 Palpites liberam quando este dia chegar"}
                     </div>
                   )}
                 </div>

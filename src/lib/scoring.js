@@ -162,3 +162,38 @@ export function ordenarRanking(linhas) {
     return b.resultadosCertos - a.resultadosCertos;
   });
 }
+
+// Dois participantes ocupam a MESMA colocacao quando empatam em todos os
+// criterios de desempate (total, placares exatos e resultados certos).
+export function mesmaColocacao(a, b) {
+  return (
+    a.total === b.total &&
+    a.placaresExatos === b.placaresExatos &&
+    a.resultadosCertos === b.resultadosCertos
+  );
+}
+
+// Recebe o ranking JA ORDENADO e devolve as mesmas linhas com `posicao`
+// (colocacao esportiva: empatados dividem a posicao e a seguinte e' pulada,
+// ex.: 1, 2, 2, 4) e `empatado` (true quando divide a posicao com vizinho).
+export function comColocacoes(linhasOrdenadas) {
+  const posicoes = linhasOrdenadas.map((linha, i, arr) => {
+    const anterior = arr[i - 1];
+    // Empatado com o anterior herda a posicao dele; senao ocupa indice + 1.
+    return anterior && mesmaColocacao(linha, anterior) ? null : i + 1;
+  });
+  // Preenche os null (empates) com a ultima posicao "real" vista.
+  let ultima = 1;
+  for (let i = 0; i < posicoes.length; i++) {
+    if (posicoes[i] == null) posicoes[i] = ultima;
+    else ultima = posicoes[i];
+  }
+  return linhasOrdenadas.map((linha, i, arr) => {
+    const anterior = arr[i - 1];
+    const proximo = arr[i + 1];
+    const empatado =
+      (!!anterior && mesmaColocacao(linha, anterior)) ||
+      (!!proximo && mesmaColocacao(linha, proximo));
+    return { ...linha, posicao: posicoes[i], empatado };
+  });
+}

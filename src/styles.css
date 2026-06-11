@@ -1075,6 +1075,15 @@ h1, h2, h3, .display {
 
 .rank-linha.top1 .pos { color: var(--ouro); }
 
+/* Marca de empate na colocação (mesmos pontos, exatos e resultados) */
+.pos-igual {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--texto-fraco);
+  margin-right: 2px;
+  vertical-align: middle;
+}
+
 .rank-linha .quem {
   display: flex;
   align-items: center;
@@ -1308,6 +1317,25 @@ table.palpites tbody tr:hover td { background: var(--verde-claro); }
   color: var(--texto-fraco);
   text-align: center;
 }
+.jr-oficial { font-weight: 700; color: var(--verde-escuro); }
+
+/* Badge de acerto (placar exato / resultado / errou) na fase de grupos */
+.jr-badge {
+  grid-column: 1 / -1;
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+.jr-badge-exato     { background: #fef3c7; color: #b45309; }
+.jr-badge-resultado { background: rgba(0,168,107,0.14); color: var(--verde-escuro); }
+.jr-badge-errado    { background: #fee2e2; color: #b91c1c; }
 
 /* Tabela classificação: colunas responsive */
 .col-pos { text-align: center !important; width: 24px; padding: 0 4px !important; }

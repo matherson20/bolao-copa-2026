@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../lib/useAuth.jsx";
-import { getBets, saveBets, getConfig } from "../lib/db";
+import { getBets, saveBets, getConfig, getResults } from "../lib/db";
 import { bandeira } from "../lib/teams";
-import { ESPECIAIS_LABEL, PONTOS_ESPECIAIS } from "../lib/scoring";
+import { ESPECIAIS_LABEL, PONTOS_ESPECIAIS, statusDoPalpite } from "../lib/scoring";
+import { sincronizarResultadosOpenFootball } from "../lib/resultsSync";
 import { gerarJogosFaseGrupos, getTodasSelecoes } from "../lib/seedData";
 import { calcularClassificacaoGrupo } from "../lib/classificacao";
 import SelectBusca from "./SelectBusca.jsx";
 import { soDigitosKeyDown, soDigitosPaste } from "../lib/inputs";
 import { JOGADORES_2026 } from "../lib/players2026";
+import { gruposTravados } from "../lib/faseConfig";
 
 const JOGOS_GRUPOS = gerarJogosFaseGrupos();
 const SELECOES = getTodasSelecoes();
@@ -119,9 +121,20 @@ function TabelaClassificacao({ classificacao }) {
   );
 }
 
-function JogoRow({ jogo, palpite, travado, onChange }) {
+// Badge de acerto do palpite x resultado oficial:
+//   🚀 placar exato · ✓ resultado certo (verde) · ✗ errou
+const STATUS_BADGE = {
+  exato:     { icone: "🚀", classe: "jr-badge-exato",     titulo: "Placar exato!" },
+  resultado: { icone: "✓",  classe: "jr-badge-resultado", titulo: "Resultado certo" },
+  errado:    { icone: "✗",  classe: "jr-badge-errado",    titulo: "Errou" },
+};
+
+function JogoRow({ jogo, palpite, resultado, travado, onChange }) {
   const p = palpite || {};
   const preenchido = p.casa != null && p.fora != null;
+  const temResultado = resultado && resultado.casa != null && resultado.fora != null;
+  const { status, pts } = statusDoPalpite(p, resultado, "grupos");
+  const badge = temResultado ? STATUS_BADGE[status] : null;
   return (
     <div className={`jogo-row${preenchido ? " preenchido" : ""}`}>
       <div className="jr-time jr-casa">
@@ -147,7 +160,16 @@ function JogoRow({ jogo, palpite, travado, onChange }) {
         <span className="jr-nome">{jogo.timeFora}</span>
         <span className="jr-bandeira">{bandeira(jogo.timeFora)}</span>
       </div>
-      <div className="jr-data">{fmtData(jogo.dataHora)}</div>
+      <div className="jr-data">
+        {temResultado ? (
+          <span className="jr-oficial">Resultado: {resultado.casa}×{resultado.fora}</span>
+        ) : fmtData(jogo.dataHora)}
+      </div>
+      {badge && (
+        <span className={`jr-badge ${badge.classe}`} title={badge.titulo}>
+          {badge.icone}{pts > 0 ? ` +${pts}` : ""}
+        </span>
+      )}
     </div>
   );
 }
@@ -156,6 +178,7 @@ export default function Grupos() {
   const { user } = useAuth();
   const [palpites, setPalpites] = useState({});
   const [especiais, setEspeciais] = useState({});
+  const [resultados, setResultados] = useState({});
   const [travaTs, setTravaTs] = useState(null);
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
@@ -167,9 +190,15 @@ export default function Grupos() {
   useEffect(() => {
     (async () => {
       try {
-        const [bets, cfg] = await Promise.all([getBets(user.uid), getConfig()]);
+        // Atualiza resultados pela fonte pública no carregamento (grava só se admin).
+        try { await sincronizarResultadosOpenFootball(); } catch { /* offline/sem permissão: ignora */ }
+
+        const [bets, cfg, res] = await Promise.all([
+          getBets(user.uid), getConfig(), getResults(),
+        ]);
         setPalpites(bets.jogos || {});
         setEspeciais(bets.especiais || {});
+        setResultados(res.resultados || {});
         setTravaTs(cfg?.travaGruposTimestamp || null);
         // todos os grupos abertos por padrão
         const init = {};
@@ -194,7 +223,7 @@ export default function Grupos() {
     return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
   }, []);
 
-  const travado = travaTs ? Date.now() >= new Date(travaTs).getTime() : false;
+  const travado = gruposTravados(travaTs);
 
   function setGol(id, lado, valor) {
     const v = valor === "" ? null : Math.max(0, parseInt(valor, 10) || 0);
@@ -357,6 +386,7 @@ export default function Grupos() {
                               <div className="rodada-label">Rodada {rodada}</div>
                               {jogosR.map(m => (
                                 <JogoRow key={m.id} jogo={m} palpite={palpites[m.id]}
+                                  resultado={resultados[m.id]}
                                   travado={travado}
                                   onChange={(lado, val) => setGol(m.id, lado, val)} />
                               ))}
