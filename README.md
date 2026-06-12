@@ -118,14 +118,24 @@ src/
   lib/
     scoring.js           regras de pontuacao (ponto unico de verdade)
     db.js                acesso ao Firestore
+    seedData.js          calendario da fase de grupos (dados locais)
+    resultsSync.js       sincroniza placares da TheSportsDB
+    classificacao.js     classificacao dos grupos
+    playoffs.js          geracao do chaveamento do mata-mata
+    faseConfig.js        travas das fases (grupos / mata-mata)
+    inputs.js            helpers de input numerico
+    players2026.js       lista de jogadores (palpites especiais)
     teams.js             bandeiras das selecoes
     useAuth.jsx          contexto de login
   components/
     Login.jsx
-    Palpites.jsx         meus palpites + especiais (com trava)
-    TodosPalpites.jsx    palpites de todos (visivel apos a trava)
-    Ranking.jsx
-    Admin.jsx            importar jogos, lancar resultados, trava, gabarito
+    Grupos.jsx           palpites da fase de grupos
+    MataMata.jsx         palpites do mata-mata
+    Palpites.jsx         palpites especiais (campeao, artilheiro, etc.)
+    Hoje.jsx             jogos do dia + palpites de todos (apos a trava)
+    Ranking.jsx          classificacao do bolao
+    Admin.jsx            importar jogos, lancar/sincronizar resultados, trava, gabarito
+    SelectBusca.jsx      dropdown com busca (selecoes/jogadores)
 firestore.rules          regras de seguranca
 .github/workflows/deploy.yml   deploy automatico no GitHub Pages
 ```
@@ -134,40 +144,29 @@ firestore.rules          regras de seguranca
 
 ## APIs de Dados da Copa 2026
 
-Para importação automática de calendário e atualização de resultados em tempo real, existem várias opções:
+O app usa duas fontes públicas e gratuitas, sem necessidade de API key:
 
-### Opções Gratuitas:
-
-1. **OpenFootball/worldcup.json** (atual)
-   - Totalmente gratuito, sem API key
-   - Dados estáticos (não tempo real)
+1. **Calendário dos jogos** — **OpenFootball/worldcup.json**
+   - Gratuito, sem chave. Lista os 104 jogos com times e datas.
    - URL: `https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json`
-   - Usado atualmente para importar calendário
+   - Usado pelo Admin no botão "Importar calendário".
 
-2. **API-Football** (api-football.com)
-   - Plano gratuito disponível
-   - Atualização a cada 15 segundos durante jogos
-   - Cobre Copa 2026 (league=1, season=2026)
-   - Requer API key (cadastro gratuito)
+2. **Placares dos jogos** — **TheSportsDB** (liga `4429`)
+   - Gratuito, usa a chave de teste pública `3` (sem cadastro).
+   - Tem a Copa 2026 com placares dos jogos finalizados.
+   - Endpoint: `eventsday.php?d=YYYY-MM-DD&l=4429` (ver `src/lib/resultsSync.js`).
 
-### Opções Pagas (Baixo Custo):
+### Como a atualização de placares funciona
 
-3. **WC2026 API** (wc2026api.com)
-   - $4.99 (pagamento único válido até julho 2026)
-   - 500 requisições/dia
-   - Tempo real, específica para Copa 2026
-   - Fixtures, scores, standings, stadium data
+A sincronização roda sozinha quando alguém abre as abas **Hoje**, **Ranking** ou
+**Grupos** — busca os jogos finalizados na TheSportsDB e grava só o que mudou.
+Apenas o **admin** consegue gravar em `results` (regra do Firestore), então na
+prática basta o admin abrir o app depois dos jogos. O Admin também tem um botão
+"🔄 Sincronizar resultados agora" e o **lançamento manual** de placar como rede
+de segurança.
 
-4. **Sportmonks**
-   - EUR 55/mês (plano anual)
-   - Fixtures, live scores, standings, squads
-   - Widgets gratuitos
-
-### Recomendação:
-
-Para um bolão entre amigos (6 pessoas), a abordagem atual (importar calendário do OpenFootball + lançar resultados manualmente via Admin) é suficiente e 100% gratuita.
-
-**Para sincronização automática em tempo real:** O projeto já está integrado com a API-Football! Basta configurar a API key gratuita no `.env`. Veja o guia completo em **[API_SETUP.md](./API_SETUP.md)**.
+> Observação: a antiga integração com a API-Football foi removida — a temporada
+> 2026 dela só está disponível nos planos pagos, então não servia para este uso.
 
 ---
 

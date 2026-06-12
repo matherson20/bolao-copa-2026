@@ -223,7 +223,7 @@ export default function Admin() {
     flash("Resultado salvo.");
   }
 
-  // ---- Sincronizar resultados (OpenFootball, fonte pública sem chave) ----
+  // ---- Sincronizar resultados (TheSportsDB, fonte pública sem chave) ----
   async function sincronizarResultados() {
     setSincronizando(true);
     try {
@@ -372,7 +372,7 @@ export default function Admin() {
               : "🔄 Sincronizar resultados agora"}
           </button>
           <p style={{ color: "var(--texto-suave)", fontSize: "0.75rem", marginTop: 6 }}>
-            Busca os placares na fonte pública OpenFootball (grátis, sem chave) e
+            Busca os placares na fonte pública TheSportsDB (grátis, sem chave) e
             grava só o que mudou. Isso também acontece sozinho quando alguém abre
             as abas <b>Hoje</b> ou <b>Ranking</b>. O lançamento manual abaixo é só
             um complemento para corrigir algo pontual.

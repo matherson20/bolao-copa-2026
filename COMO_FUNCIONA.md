@@ -75,8 +75,10 @@ Admin → Lançar resultados oficiais → Preencher placares → Salvar
 ```
 
 Opções:
-- **Manual**: Preencher placar por placar
-- **Automática** (se API configurada): Sincronizar resultados da API-Football
+- **Automática**: "🔄 Sincronizar resultados agora" busca os placares na
+  TheSportsDB (grátis, sem chave). Também roda sozinho quando alguém abre
+  as abas Hoje / Ranking / Grupos.
+- **Manual**: Preencher placar por placar (rede de segurança para corrigir algo)
 
 **Para Todos:**
 ```
@@ -206,12 +208,10 @@ const ADMIN_EMAILS = [
 ### Alterar Data de Trava
 Admin > Configuração > Data e hora de trava > Salvar trava
 
-### API-Football (Opcional)
-Para sincronização automática de resultados:
-1. Obtenha API key em https://www.api-football.com/
-2. Adicione no `.env`: `VITE_API_FOOTBALL_KEY=sua_key`
-3. Reinicie o servidor
-4. Admin > Sincronizar resultados
+### Sincronização de resultados
+Automática e gratuita, sem configuração: os placares vêm da **TheSportsDB**
+(`src/lib/resultsSync.js`). Roda sozinha ao abrir Hoje / Ranking / Grupos, ou
+manualmente em Admin > "🔄 Sincronizar resultados agora". Só o admin grava.
 
 ---
 

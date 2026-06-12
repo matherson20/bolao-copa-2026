@@ -1,21 +1,30 @@
 /**
- * Sincronização automática de resultados — fonte OpenFootball (domínio público).
+ * Sincronização automática de resultados — fonte TheSportsDB (gratuita, sem key).
  *
- * Sem API key, sem backend: o front busca o JSON público da Copa 2026 e grava
- * no Firestore (coleção `results`) apenas os placares que ainda não estavam lá
- * ou que mudaram. Roda quando alguém abre as abas Hoje / Ranking.
+ * Sem backend: o front busca os jogos da Copa 2026 na TheSportsDB e grava no
+ * Firestore (coleção `results`) apenas os placares que ainda não estavam lá ou
+ * que mudaram. Roda quando alguém abre as abas Hoje / Ranking / Grupos.
  *
- * O OpenFootball usa nomes de seleções em inglês; nosso app usa português.
+ * Por que TheSportsDB e não OpenFootball/API-Football?
+ *  - OpenFootball (fonte antiga) publica só o calendário; os placares ficam
+ *    vazios por dias — então nada atualizava na prática.
+ *  - API-Football só libera a temporada 2026 nos planos pagos.
+ *  - TheSportsDB tem a Copa 2026 (liga 4429) COM placares, é grátis e usa a
+ *    chave de teste pública "3" (sem cadastro).
+ *
+ * A TheSportsDB usa nomes de seleções em inglês; nosso app usa português.
  * O mapa EN→PT abaixo cobre as 48 seleções da Copa 2026.
  */
 
 import { getMatches, getResults, saveResult } from "./db";
 import { gerarJogosFaseGrupos } from "./seedData";
 
-const FONTE =
-  "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json";
+// Liga "FIFA World Cup" na TheSportsDB. Chave de teste pública gratuita: "3".
+const LEAGUE_ID = "4429";
+const API_KEY = "3";
+const BASE = `https://www.thesportsdb.com/api/v1/json/${API_KEY}`;
 
-// Nome OpenFootball (inglês) → nome usado no app (português)
+// Nome TheSportsDB (inglês) → nome usado no app (português)
 const EN_PT = {
   "Mexico": "México",
   "South Korea": "Coreia do Sul",
@@ -26,6 +35,7 @@ const EN_PT = {
   "Qatar": "Catar",
   "Bosnia & Herzegovina": "Bósnia e Herzegovina",
   "Bosnia and Herzegovina": "Bósnia e Herzegovina",
+  "Bosnia-Herzegovina": "Bósnia e Herzegovina",
   "Brazil": "Brasil",
   "Morocco": "Marrocos",
   "Haiti": "Haiti",
@@ -76,23 +86,9 @@ const EN_PT = {
   "Panama": "Panamá",
 };
 
-// Rodadas de mata-mata do OpenFootball → fase interna do app
-const FASE_KO = {
-  "Round of 32": "r32",
-  "Round of 16": "oitavas",
-  "Quarter-finals": "quartas",
-  "Quarter-final": "quartas",
-  "Semi-finals": "semi",
-  "Semi-final": "semi",
-  "Match for third place": "terceiro",
-  "Third place": "terceiro",
-  "Play-off for third place": "terceiro",
-  "Final": "final",
-};
-
 function pt(nomeEn) {
   if (!nomeEn) return null;
-  const t = nomeEn.trim();
+  const t = String(nomeEn).trim();
   return EN_PT[t] || t;
 }
 
@@ -101,39 +97,61 @@ function chaveConfronto(a, b) {
   return [a, b].map((s) => (s || "").toLowerCase().trim()).sort().join("__vs__");
 }
 
-// Extrai o placar de tempo normal (ft) de um match OpenFootball, se houver.
-function placarFt(m) {
-  const ft = m?.score?.ft;
-  if (!Array.isArray(ft) || ft.length < 2) return null;
-  const [casa, fora] = ft;
-  if (casa == null || fora == null) return null;
+// Status que indicam jogo finalizado na TheSportsDB.
+const STATUS_FINALIZADO = new Set(["FT", "AET", "PEN", "Match Finished"]);
+
+// Extrai o placar de um evento da TheSportsDB, se o jogo estiver finalizado.
+function placarDoEvento(ev) {
+  const status = (ev?.strStatus || "").trim();
+  // Só conta jogo finalizado. Evita gravar placar parcial de jogo ao vivo.
+  if (!STATUS_FINALIZADO.has(status)) return null;
+  const casa = ev?.intHomeScore;
+  const fora = ev?.intAwayScore;
+  if (casa == null || casa === "" || fora == null || fora === "") return null;
   return { casa: Number(casa), fora: Number(fora) };
 }
 
+// Datas a varrer: hoje e os 2 dias anteriores (UTC). Cobre jogos que viraram a
+// meia-noite por causa de fuso e pega placares lançados com algum atraso.
+function diasParaBuscar() {
+  const dias = [];
+  const hoje = new Date();
+  for (let i = 0; i <= 2; i++) {
+    const d = new Date(hoje);
+    d.setUTCDate(d.getUTCDate() - i);
+    dias.push(d.toISOString().slice(0, 10)); // YYYY-MM-DD
+  }
+  return dias;
+}
+
 /**
- * Busca o JSON do OpenFootball e devolve um mapa
- *   { [chaveConfronto]: { casaTime, foraTime, placar, fase, round } }
- * apenas para jogos COM placar definido.
+ * Busca os eventos da Copa 2026 nos últimos dias e devolve um mapa
+ *   { [chaveConfronto]: { casaTime, foraTime, placar } }
+ * apenas para jogos finalizados COM placar.
  */
 async function carregarResultadosFonte() {
-  const resp = await fetch(FONTE, { cache: "no-store" });
-  if (!resp.ok) throw new Error(`OpenFootball HTTP ${resp.status}`);
-  const data = await resp.json();
-  const lista = data.matches || [];
-
   const porConfronto = {};
-  for (const m of lista) {
-    const placar = placarFt(m);
-    if (!placar) continue; // só jogos já finalizados/com placar
-    const casaTime = pt(m.team1?.name || m.team1);
-    const foraTime = pt(m.team2?.name || m.team2);
-    if (!casaTime || !foraTime) continue;
 
-    const fase = m.group ? "grupos" : (FASE_KO[m.round] || null);
-    porConfronto[chaveConfronto(casaTime, foraTime)] = {
-      casaTime, foraTime, placar, fase, round: m.round,
-    };
+  const respostas = await Promise.all(
+    diasParaBuscar().map((dia) =>
+      fetch(`${BASE}/eventsday.php?d=${dia}&l=${LEAGUE_ID}`, { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null)
+    )
+  );
+
+  for (const data of respostas) {
+    const lista = data?.events || [];
+    for (const ev of lista) {
+      const placar = placarDoEvento(ev);
+      if (!placar) continue;
+      const casaTime = pt(ev.strHomeTeam);
+      const foraTime = pt(ev.strAwayTeam);
+      if (!casaTime || !foraTime) continue;
+      porConfronto[chaveConfronto(casaTime, foraTime)] = { casaTime, foraTime, placar };
+    }
   }
+
   return porConfronto;
 }
 
@@ -143,9 +161,9 @@ async function carregarResultadosFonte() {
  *
  * Grava em `results/{matchId}` apenas o que mudou. Retorna { atualizados, total }.
  */
-export async function sincronizarResultadosOpenFootball() {
+export async function sincronizarResultados() {
   const [fonte, matchesFirestore, { resultados }] = await Promise.all([
-    carregarResultadosFonte(),
+    carregarResultadosFonte().catch(() => ({})),
     getMatches().catch(() => []),
     getResults().catch(() => ({ resultados: {} })),
   ]);
@@ -163,7 +181,7 @@ export async function sincronizarResultadosOpenFootball() {
     const info = fonte[chaveConfronto(jogo.timeCasa, jogo.timeFora)];
     if (!info) continue;
 
-    // O OpenFootball pode listar o confronto em ordem invertida (mando trocado).
+    // A fonte pode listar o confronto em ordem invertida (mando trocado).
     // Reorienta o placar para a ordem casa/fora do nosso jogo.
     const mesmaOrdem =
       info.casaTime.toLowerCase().trim() === jogo.timeCasa.toLowerCase().trim();
@@ -180,7 +198,7 @@ export async function sincronizarResultadosOpenFootball() {
       await saveResult(jogo.id, {
         casa: placar.casa,
         fora: placar.fora,
-        fonte: "openfootball",
+        fonte: "thesportsdb",
         atualizadoEm: new Date().toISOString(),
       });
       atualizados++;
@@ -197,3 +215,6 @@ export async function sincronizarResultadosOpenFootball() {
 
   return { atualizados, total: jogos.length };
 }
+
+// Alias retrocompatível: os componentes ainda importam este nome.
+export const sincronizarResultadosOpenFootball = sincronizarResultados;
