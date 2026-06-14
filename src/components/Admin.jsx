@@ -13,7 +13,7 @@ import { useAuth } from "../lib/useAuth.jsx";
 import { bandeira } from "../lib/teams";
 import { ESPECIAIS_LABEL } from "../lib/scoring";
 import { sincronizarResultadosOpenFootball } from "../lib/resultsSync";
-import { getDadosSeed, getTodasSelecoes } from "../lib/seedData";
+import { getDadosSeed, getTodasSelecoes, gerarJogosFaseGrupos } from "../lib/seedData";
 import SelectBusca from "./SelectBusca.jsx";
 import { soDigitosKeyDown, soDigitosPaste } from "../lib/inputs";
 import { JOGADORES_2026 } from "../lib/players2026";
@@ -36,6 +36,34 @@ function slug(s) {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-zA-Z0-9]+/g, "-")
     .toLowerCase();
+}
+
+// Margem ap\u00f3s o in\u00edcio do jogo a partir da qual j\u00e1 dever\u00edamos ter o placar.
+// 3h cobre 90' + intervalo + acr\u00e9scimos + algum atraso da fonte.
+const MARGEM_JOGO_MS = 3 * 60 * 60 * 1000;
+
+// Converte o dataHora do seed (BRT, sem fuso expl\u00edcito, ex. "2026-06-14T01:00:00")
+// num instante absoluto. Sem isso, new Date() interpretaria como hora local do
+// navegador do admin, errando o c\u00e1lculo pra quem n\u00e3o est\u00e1 em UTC-3.
+function instanteBRT(dataHora) {
+  if (!dataHora) return null;
+  // J\u00e1 vem com fuso? respeita. Sen\u00e3o, assume BRT (-03:00).
+  const temFuso = /([zZ]|[+-]\d{2}:?\d{2})$/.test(dataHora);
+  const t = Date.parse(temFuso ? dataHora : `${dataHora}-03:00`);
+  return Number.isNaN(t) ? null : t;
+}
+
+// Jogos da fase de grupos cujo hor\u00e1rio j\u00e1 passou (+ margem) e que seguem sem
+// placar em `resultados`. Sinaliza buracos da fonte autom\u00e1tica (ex.: TheSportsDB
+// n\u00e3o publicou o jogo), pra n\u00e3o passar batido.
+function jogosVencidosSemPlacar(resultados, agora = Date.now()) {
+  return gerarJogosFaseGrupos().filter((j) => {
+    const r = resultados[j.id];
+    const temPlacar = r && r.casa != null && r.fora != null;
+    if (temPlacar) return false;
+    const ini = instanteBRT(j.dataHora);
+    return ini != null && agora - ini >= MARGEM_JOGO_MS;
+  });
 }
 
 export default function Admin() {
@@ -285,6 +313,8 @@ export default function Admin() {
     );
   }
 
+  const semPlacar = jogosVencidosSemPlacar(resultados);
+
   return (
     <>
       <div className="bloco">
@@ -378,6 +408,37 @@ export default function Admin() {
             um complemento para corrigir algo pontual.
           </p>
         </div>
+
+        {semPlacar.length > 0 && (
+          <div
+            style={{
+              border: "1px solid #e0a800",
+              background: "#fff8e1",
+              color: "#664d03",
+              borderRadius: 8,
+              padding: "10px 12px",
+              marginBottom: 16,
+              fontSize: "0.82rem",
+            }}
+          >
+            <b>⚠️ {semPlacar.length} jogo(s) já aconteceram e estão sem placar.</b>
+            <p style={{ margin: "4px 0 8px" }}>
+              A fonte automática (TheSportsDB) pode não ter publicado esses jogos.
+              Lance o placar à mão abaixo, ou via{" "}
+              <code>node scripts/admin.mjs results:set &lt;id&gt; &lt;casa&gt; &lt;fora&gt;</code>.
+            </p>
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {semPlacar.map((j) => (
+                <li key={j.id}>
+                  {j.timeCasa} × {j.timeFora}{" "}
+                  <span style={{ color: "#998200" }}>
+                    (grupo {j.grupo}, rod. {j.rodada}) — <code>{j.id}</code>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {matches.length === 0 && (
           <p style={{ color: "var(--texto-suave)", fontSize: "0.82rem" }}>

@@ -6,6 +6,9 @@
  *
  * Uso:
  *   node scripts/admin.mjs results:list
+ *   node scripts/admin.mjs results:set <id> <casa> <fora>   (lança/corrige placar
+ *                                                    manualmente, ex. quando a fonte
+ *                                                    TheSportsDB não tem o jogo)
  *   node scripts/admin.mjs results:del <id> [<id> ...]
  *   node scripts/admin.mjs results:clear            (apaga TODOS os placares,
  *                                                    preserva o gabarito _especiais)
@@ -49,6 +52,32 @@ async function resultsList() {
   });
 }
 
+async function resultsSet([id, casa, fora]) {
+  if (!id || casa == null || fora == null) {
+    console.error("Uso: node scripts/admin.mjs results:set <id> <casa> <fora>");
+    console.error("Ex.: node scripts/admin.mjs results:set g-d-r1-australia-turquia 2 1");
+    process.exit(1);
+  }
+  const nCasa = Number(casa);
+  const nFora = Number(fora);
+  if (!Number.isInteger(nCasa) || !Number.isInteger(nFora) || nCasa < 0 || nFora < 0) {
+    console.error(`Placar inválido: "${casa}"×"${fora}". Use inteiros >= 0.`);
+    process.exit(1);
+  }
+  // Mesmo formato que o app grava em saveResult (merge), com fonte "manual"
+  // pra deixar claro que não veio da TheSportsDB.
+  await db.collection("results").doc(id).set(
+    {
+      casa: nCasa,
+      fora: nFora,
+      fonte: "manual",
+      atualizadoEm: new Date().toISOString(),
+    },
+    { merge: true }
+  );
+  console.log(`✅ results/${id}  →  ${nCasa}×${nFora} (manual)`);
+}
+
 async function resultsDel(ids) {
   if (!ids.length) {
     console.error("Informe ao menos um id: node scripts/admin.mjs results:del <id> ...");
@@ -78,6 +107,7 @@ async function configGet() {
 
 const COMANDOS = {
   "results:list": () => resultsList(),
+  "results:set": () => resultsSet(args),
   "results:del": () => resultsDel(args),
   "results:clear": () => resultsClear(),
   "config:get": () => configGet(),
