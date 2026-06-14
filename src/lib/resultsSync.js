@@ -1,18 +1,24 @@
 /**
- * Sincronização automática de resultados — fonte TheSportsDB (gratuita, sem key).
+ * Sincronização automática de resultados — duas fontes públicas, gratuitas e
+ * sem chave: OpenFootball (PRIMÁRIA) + TheSportsDB (reforço).
  *
- * Sem backend: o front busca os jogos da Copa 2026 na TheSportsDB e grava no
- * Firestore (coleção `results`) apenas os placares que ainda não estavam lá ou
- * que mudaram. Roda quando alguém abre as abas Hoje / Ranking / Grupos.
+ * Sem backend: o front busca os placares da Copa 2026 nas duas fontes, mescla
+ * (OpenFootball prevalece) e grava no Firestore (coleção `results`) apenas o que
+ * mudou. Roda quando alguém abre as abas Hoje / Ranking / Grupos.
  *
- * Por que TheSportsDB e não OpenFootball/API-Football?
- *  - OpenFootball (fonte antiga) publica só o calendário; os placares ficam
- *    vazios por dias — então nada atualizava na prática.
- *  - API-Football só libera a temporada 2026 nos planos pagos.
- *  - TheSportsDB tem a Copa 2026 (liga 4429) COM placares, é grátis e usa a
- *    chave de teste pública "3" (sem cadastro).
+ * Por que duas fontes?
+ *  - A TheSportsDB (liga 4429, chave de teste "3") tem placares, mas a base é
+ *    incompleta: no 1º dia faltaram jogos inteiros (Grupos D e F), que nunca
+ *    eram gravados.
+ *  - O OpenFootball publica a Copa 2026 num único JSON, com `score.ft` só quando
+ *    o jogo acaba, e cobriu justamente os jogos que faltavam — então virou a
+ *    fonte primária. A TheSportsDB fica como reforço/redundância.
+ *  - API-Football foi descartada: só libera a temporada 2026 nos planos pagos.
  *
- * A TheSportsDB usa nomes de seleções em inglês; nosso app usa português.
+ * Quando as duas discordam de um placar, vale a primária e registramos a
+ * divergência (retorno `conflitos`) pro Admin conferir.
+ *
+ * As duas fontes usam nomes de seleções em inglês; nosso app usa português.
  * O mapa EN→PT abaixo cobre as 48 seleções da Copa 2026.
  */
 
@@ -125,11 +131,11 @@ function diasParaBuscar() {
 }
 
 /**
- * Busca os eventos da Copa 2026 nos últimos dias e devolve um mapa
+ * Busca os eventos da Copa 2026 nos últimos dias na TheSportsDB e devolve um mapa
  *   { [chaveConfronto]: { casaTime, foraTime, placar } }
  * apenas para jogos finalizados COM placar.
  */
-async function carregarResultadosFonte() {
+async function carregarResultadosTheSportsDB() {
   const porConfronto = {};
 
   const respostas = await Promise.all(
@@ -148,11 +154,95 @@ async function carregarResultadosFonte() {
       const casaTime = pt(ev.strHomeTeam);
       const foraTime = pt(ev.strAwayTeam);
       if (!casaTime || !foraTime) continue;
-      porConfronto[chaveConfronto(casaTime, foraTime)] = { casaTime, foraTime, placar };
+      porConfronto[chaveConfronto(casaTime, foraTime)] = {
+        casaTime,
+        foraTime,
+        placar,
+        origem: "thesportsdb",
+      };
     }
   }
 
   return porConfronto;
+}
+
+// Fonte de fallback: OpenFootball (domínio público, sem chave). Publica a Copa
+// 2026 completa em um único JSON, com placar final em `score.ft` SÓ quando o jogo
+// termina (nunca preenche jogo futuro — verificado). No teste do 1º dia ela cobriu
+// jogos que a TheSportsDB não tinha (Grupos D e F), por isso é a fonte PRIMÁRIA.
+const OPENFOOTBALL_URL =
+  "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json";
+
+/**
+ * Busca o JSON do OpenFootball e devolve o mesmo formato de mapa por confronto,
+ * só com jogos que já têm placar final (`score.ft`). Usa os mesmos nomes em inglês
+ * da TheSportsDB, então o mapa EN→PT (pt()) serve para os dois.
+ */
+async function carregarResultadosOpenFootball() {
+  const porConfronto = {};
+
+  const data = await fetch(OPENFOOTBALL_URL, { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+
+  for (const m of data?.matches || []) {
+    const ft = m?.score?.ft;
+    if (!Array.isArray(ft) || ft.length < 2) continue; // só jogo finalizado
+    const casa = Number(ft[0]);
+    const fora = Number(ft[1]);
+    if (!Number.isFinite(casa) || !Number.isFinite(fora)) continue;
+    const casaTime = pt(m.team1);
+    const foraTime = pt(m.team2);
+    if (!casaTime || !foraTime) continue;
+    porConfronto[chaveConfronto(casaTime, foraTime)] = {
+      casaTime,
+      foraTime,
+      placar: { casa, fora },
+      origem: "openfootball",
+    };
+  }
+
+  return porConfronto;
+}
+
+/**
+ * Carrega as duas fontes e mescla: OpenFootball é PRIMÁRIA (prevalece), a
+ * TheSportsDB só preenche confrontos que a primária não tiver.
+ *
+ * Devolve { fonte, conflitos } onde:
+ *  - fonte: mapa final por confronto usado para gravar.
+ *  - conflitos: lista dos confrontos em que as duas fontes deram placares
+ *    diferentes (vale a primária, mas o Admin avisa pra conferência manual).
+ */
+async function carregarResultadosFonte() {
+  const [primaria, reforco] = await Promise.all([
+    carregarResultadosOpenFootball().catch(() => ({})),
+    carregarResultadosTheSportsDB().catch(() => ({})),
+  ]);
+
+  const fonte = { ...reforco, ...primaria }; // primária sobrescreve o reforço
+  const conflitos = [];
+
+  for (const chave of Object.keys(primaria)) {
+    const b = reforco[chave];
+    if (!b) continue;
+    const a = primaria[chave];
+    // Compara já na mesma orientação (casa/fora) que cada fonte reportou.
+    const igual =
+      a.casaTime.toLowerCase().trim() === b.casaTime.toLowerCase().trim()
+        ? a.placar.casa === b.placar.casa && a.placar.fora === b.placar.fora
+        : a.placar.casa === b.placar.fora && a.placar.fora === b.placar.casa;
+    if (!igual) {
+      conflitos.push({
+        casaTime: a.casaTime,
+        foraTime: a.foraTime,
+        openfootball: a.placar,
+        thesportsdb: b.placar,
+      });
+    }
+  }
+
+  return { fonte, conflitos };
 }
 
 /**
@@ -162,8 +252,8 @@ async function carregarResultadosFonte() {
  * Grava em `results/{matchId}` apenas o que mudou. Retorna { atualizados, total }.
  */
 export async function sincronizarResultados() {
-  const [fonte, matchesFirestore, { resultados }] = await Promise.all([
-    carregarResultadosFonte().catch(() => ({})),
+  const [{ fonte, conflitos }, matchesFirestore, { resultados }] = await Promise.all([
+    carregarResultadosFonte().catch(() => ({ fonte: {}, conflitos: [] })),
     getMatches().catch(() => []),
     getResults().catch(() => ({ resultados: {} })),
   ]);
@@ -198,7 +288,7 @@ export async function sincronizarResultados() {
       await saveResult(jogo.id, {
         casa: placar.casa,
         fora: placar.fora,
-        fonte: "thesportsdb",
+        fonte: info.origem || "automatica",
         atualizadoEm: new Date().toISOString(),
       });
       atualizados++;
@@ -207,13 +297,13 @@ export async function sincronizarResultados() {
       // Quando um usuário comum abre o app, a escrita é negada — tudo bem,
       // um admin (ou a próxima visita de admin) sincroniza. Não derruba o loop.
       if (e?.code === "permission-denied") {
-        return { atualizados, total: jogos.length, semPermissao: true };
+        return { atualizados, total: jogos.length, conflitos, semPermissao: true };
       }
       console.warn("Falha ao gravar resultado", jogo.id, e?.message);
     }
   }
 
-  return { atualizados, total: jogos.length };
+  return { atualizados, total: jogos.length, conflitos };
 }
 
 // Alias retrocompatível: os componentes ainda importam este nome.

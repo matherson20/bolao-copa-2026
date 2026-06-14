@@ -79,6 +79,7 @@ export default function Admin() {
   const [importando, setImportando] = useState(false);
   const [sincronizando, setSincronizando] = useState(false);
   const [zerando, setZerando] = useState(false);
+  const [conflitos, setConflitos] = useState([]);
 
   async function carregar() {
     const [ms, res, cfg] = await Promise.all([
@@ -255,12 +256,17 @@ export default function Admin() {
   async function sincronizarResultados() {
     setSincronizando(true);
     try {
-      const { atualizados } = await sincronizarResultadosOpenFootball();
+      const { atualizados, conflitos = [] } = await sincronizarResultadosOpenFootball();
+      setConflitos(conflitos);
       await carregar();
-      flash(
+      const baseMsg =
         atualizados > 0
           ? `${atualizados} resultado(s) atualizado(s) pela fonte pública.`
-          : "Nenhum resultado novo. Tudo já estava em dia."
+          : "Nenhum resultado novo. Tudo já estava em dia.";
+      flash(
+        conflitos.length > 0
+          ? `${baseMsg} ⚠️ ${conflitos.length} divergência(s) entre fontes — veja o aviso.`
+          : baseMsg
       );
     } catch (e) {
       console.error("Erro ao sincronizar:", e);
@@ -423,8 +429,8 @@ export default function Admin() {
           >
             <b>⚠️ {semPlacar.length} jogo(s) já aconteceram e estão sem placar.</b>
             <p style={{ margin: "4px 0 8px" }}>
-              A fonte automática (TheSportsDB) pode não ter publicado esses jogos.
-              Lance o placar à mão abaixo, ou via{" "}
+              As fontes automáticas (OpenFootball e TheSportsDB) podem não ter
+              publicado esses jogos. Lance o placar à mão abaixo, ou via{" "}
               <code>node scripts/admin.mjs results:set &lt;id&gt; &lt;casa&gt; &lt;fora&gt;</code>.
             </p>
             <ul style={{ margin: 0, paddingLeft: 18 }}>
@@ -433,6 +439,37 @@ export default function Admin() {
                   {j.timeCasa} × {j.timeFora}{" "}
                   <span style={{ color: "#998200" }}>
                     (grupo {j.grupo}, rod. {j.rodada}) — <code>{j.id}</code>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {conflitos.length > 0 && (
+          <div
+            style={{
+              border: "1px solid #dc3545",
+              background: "#fdecea",
+              color: "#842029",
+              borderRadius: 8,
+              padding: "10px 12px",
+              marginBottom: 16,
+              fontSize: "0.82rem",
+            }}
+          >
+            <b>⚠️ {conflitos.length} jogo(s) com placar divergente entre as fontes.</b>
+            <p style={{ margin: "4px 0 8px" }}>
+              Foi gravado o placar do OpenFootball (fonte primária). Confira o
+              resultado oficial e corrija à mão abaixo se necessário.
+            </p>
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {conflitos.map((c) => (
+                <li key={`${c.casaTime}-${c.foraTime}`}>
+                  {c.casaTime} × {c.foraTime}:{" "}
+                  <b>OpenFootball {c.openfootball.casa}×{c.openfootball.fora}</b>{" "}
+                  <span style={{ color: "#a13" }}>
+                    vs TheSportsDB {c.thesportsdb.casa}×{c.thesportsdb.fora}
                   </span>
                 </li>
               ))}
