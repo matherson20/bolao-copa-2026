@@ -10,3 +10,6 @@ dist
 serviceAccount.json
 serviceAccount*.json
 *-firebase-adminsdk-*.json
+
+# Backups de palpites (dados de usuário — não versionar)
+backup-bets-*.json
