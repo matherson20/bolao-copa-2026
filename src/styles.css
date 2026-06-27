@@ -1485,9 +1485,39 @@ table.palpites tbody tr:hover td { background: var(--verde-claro); }
 .jm-status.tag-travada  { color: var(--texto-suave); background: var(--bg); border: 1px solid var(--borda); }
 .jm-status.tag-definir  { color: #8a6d00; background: #fff8e1; border: 1px solid #f0e0a0; }
 
-/* Jogo sem confronto definido: visual mais leve, mas legível (não opaco) */
-.jogo-indefinido { background: var(--bg); }
-.jogo-indefinido .jm-placar input { background: var(--bg); }
+/* Confronto ainda não definido (previsão/readonly): legível, mas claramente
+   distinto de um confronto liberado — borda tracejada e selo "PREVISÃO". */
+.jogo-indefinido {
+  background: repeating-linear-gradient(
+    -45deg, var(--bg), var(--bg) 10px, #f5f6f8 10px, #f5f6f8 20px
+  );
+  border-style: dashed;
+  border-color: var(--borda-forte);
+  position: relative;
+}
+/* Selo "PREVISÃO" no topo do card de confronto não-definido. No JSX (texto
+   varia: estimativa vs a definir). Refere-se ao confronto, não ao horário. */
+.jm-selo-previsao {
+  position: absolute;
+  top: -8px;
+  left: 10px;
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #8a6d00;
+  background: #fff8e1;
+  border: 1px solid #f0e0a0;
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+/* Inputs de um confronto não-definido: visivelmente travados (cadeado). */
+.jogo-indefinido .jm-placar input {
+  background: #eceef1;
+  border-style: dashed;
+  cursor: not-allowed;
+  color: var(--texto-fraco);
+}
 
 .jm-sub-label {
   font-size: 0.7rem;

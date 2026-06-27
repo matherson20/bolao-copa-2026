@@ -39,14 +39,33 @@ export function inicioDaFase(jogosDaFase) {
   return tempos.length ? Math.min(...tempos) : null;
 }
 
+// Fuso de Brasília (UTC-3). A trava dos palpites usa 00:00 BRT do dia do jogo.
+const BRT_OFFSET_MS = 3 * 60 * 60 * 1000;
+
+// Instante (ms) da meia-noite (00:00) em BRT do dia em que o jogo acontece.
+// O palpite trava nesse momento — antes de o Hoje revelar os palpites daquele
+// dia — para ninguém ver as apostas alheias e ainda poder mudar a sua.
+// Ex.: jogo às 16:00 BRT de 28/06 → trava em 28/06 00:00 BRT.
+//      jogo às 22:00 BRT de 28/06 (01:00Z do dia 29) → ainda 28/06 00:00 BRT.
+export function meiaNoiteBRTdoJogo(dataHoraISO) {
+  const t = dataHoraISO ? new Date(dataHoraISO).getTime() : null;
+  if (t == null || Number.isNaN(t)) return null;
+  // Desloca pra "hora BRT", zera para o início do dia BRT e volta pra UTC.
+  const brt = new Date(t - BRT_OFFSET_MS);
+  const inicioDiaBRTutc = Date.UTC(brt.getUTCFullYear(), brt.getUTCMonth(), brt.getUTCDate());
+  return inicioDiaBRTutc + BRT_OFFSET_MS; // 00:00 BRT em instante absoluto (UTC ms)
+}
+
 // Estado de um único jogo do mata-mata: "definir" | "aberto" | "encerrado".
 export function estadoJogoMata(jogo, cfg, agora = Date.now()) {
   const definido = !!jogo?.timeCasa && !!jogo?.timeFora;
   if (!definido) return "definir";
   if (cfg?.travarFase?.[jogo.fase]) return "encerrado";
-  const inicio = jogo?.dataHora ? new Date(jogo.dataHora).getTime() : null;
   if (cfg?.liberarFase?.[jogo.fase]) return "aberto"; // admin forçou ignorar horário
-  if (inicio != null && agora >= inicio) return "encerrado";
+  // Trava em 00:00 BRT do dia do jogo (mesma proteção da fase de grupos: quando
+  // o Hoje revela os palpites do dia, eles já estão todos travados).
+  const trava = meiaNoiteBRTdoJogo(jogo?.dataHora);
+  if (trava != null && agora >= trava) return "encerrado";
   return "aberto";
 }
 

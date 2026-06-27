@@ -33,7 +33,7 @@ function ladoJogo(jogo, lado, ctx) {
 const STATUS_JOGO = {
   definir:   { classe: "tag-definir",   texto: "A definir" },
   aberto:    { classe: "tag-aberta",    texto: "🔓 Aberto" },
-  encerrado: { classe: "tag-travada",   texto: "🔒 Encerrado" },
+  encerrado: { classe: "tag-travada",   texto: "🔒 Palpites fechados" },
 };
 
 function JogoMata({ jogo, palpite, ctx }) {
@@ -44,13 +44,10 @@ function JogoMata({ jogo, palpite, ctx }) {
   //  - "estimativa": há um time provável calculado (3º colocado) sendo exibido.
   //  - "provavel":   algum lado já tem time provável (ex.: 1º/2º de grupo).
   //  - "aguardando": nenhum time ainda (ex.: oitavas dependendo dos 16-avos).
+  // Texto do selo de "previsão" no topo de um confronto ainda não definido.
+  // Refere-se ao CONFRONTO/times — nunca ao horário (que é fixo).
   const temProvavel = (casa.time && casa.provavel) || (fora.time && fora.provavel);
-  const temAlgumTime = casa.time || fora.time;
-  const rotuloConfronto = !definido && (
-    temProvavel ? "provável (estimativa)"
-    : temAlgumTime ? "provável confronto"
-    : "aguardando classificação"
-  );
+  const seloPrevisao = temProvavel ? "PREVISÃO · estimativa" : "PREVISÃO · a definir";
   const estado = estadoJogoMata(jogo, ctx.cfg);
   const editavel = estado === "aberto";
   const info = STATUS_JOGO[estado] || STATUS_JOGO.definir;
@@ -61,6 +58,7 @@ function JogoMata({ jogo, palpite, ctx }) {
 
   return (
     <div className={`jogo-mata${!definido ? " jogo-indefinido" : ""}`}>
+      {!definido && <span className="jm-selo-previsao">{seloPrevisao}</span>}
       <div className="jm-time jm-casa">
         <span className="jm-bandeira">{casa.time ? bandeira(casa.time) : "⚽"}</span>
         <span className={nomeClasse(casa)}>{casa.nome}</span>
@@ -81,10 +79,13 @@ function JogoMata({ jogo, palpite, ctx }) {
         <span className="jm-bandeira">{fora.time ? bandeira(fora.time) : "⚽"}</span>
       </div>
       <div className="jm-label">
-        {jogo.dataHora ? fmtData(jogo.dataHora) : ""}
-        <span className={`jm-status ${info.classe}`}>
-          {definido ? info.texto : rotuloConfronto}
-        </span>
+        <span className="jm-hora-label">{jogo.dataHora ? fmtData(jogo.dataHora) : ""}</span>
+        {/* Status só para confrontos definidos (aberto/encerrado). Os não
+            definidos já têm o selo "PREVISÃO" no topo do card — sem tag aqui,
+            para não dar a impressão de que o HORÁRIO (que é fixo) é estimado. */}
+        {definido && (
+          <span className={`jm-status ${info.classe}`}>{info.texto}</span>
+        )}
       </div>
     </div>
   );
@@ -98,7 +99,7 @@ function FaseBloco({ fase, jogos, palpites, ctx }) {
   const partes = [];
   if (abertos) partes.push(`${abertos} aberto${abertos > 1 ? "s" : ""}`);
   if (aDefinir) partes.push(`${aDefinir} a definir`);
-  if (encerrados) partes.push(`${encerrados} encerrado${encerrados > 1 ? "s" : ""}`);
+  if (encerrados) partes.push(`${encerrados} fechado${encerrados > 1 ? "s" : ""}`);
 
   return (
     <div className="mata-fase">
@@ -148,7 +149,9 @@ export default function MataMata() {
         ]);
         setPalpites(bets.jogos || {});
         setCfg(config || {});
-        setFaseAberta(!!config?.mataMataAberto);
+        // Mata-mata fica ABERTO por padrão. Só fica oculto se a config disser
+        // explicitamente mataMataAberto === false (rede de segurança via Firestore).
+        setFaseAberta(config?.mataMataAberto !== false);
         setResultados(res.resultados || {});
         setJogosKO(ko.jogos || []);
       } catch (e) { console.error(e); }

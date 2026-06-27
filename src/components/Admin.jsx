@@ -75,7 +75,6 @@ export default function Admin() {
   const [resultados, setResultados] = useState({});
   const [gabarito, setGabarito] = useState({});
   const [travaTs, setTravaTs] = useState("");
-  const [mataMataAberto, setMataMataAberto] = useState(false);
   const [cfgFull, setCfgFull] = useState({});
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
@@ -102,7 +101,6 @@ export default function Admin() {
         .slice(0, 16);
       setTravaTs(local);
     }
-    setMataMataAberto(cfg?.mataMataAberto === true);
   }
 
   useEffect(() => {
@@ -208,21 +206,6 @@ export default function Admin() {
     const millis = new Date(travaTs).getTime();
     await setConfig({ travaGruposTimestamp: millis });
     flash("Data de trava salva.");
-  }
-
-  // ---- Liberar / fechar mata-mata ----
-  async function liberarMataMata() {
-    if (!confirm("Liberar os palpites do mata-mata para todos os participantes?")) return;
-    await setConfig({ mataMataAberto: true });
-    setMataMataAberto(true);
-    flash("Mata-mata liberado!");
-  }
-
-  async function fecharMataMata() {
-    if (!confirm("Fechar os palpites do mata-mata?")) return;
-    await setConfig({ mataMataAberto: false });
-    setMataMataAberto(false);
-    flash("Mata-mata fechado.");
   }
 
   // ---- Overrides de trava por rodada do mata-mata ----
@@ -345,23 +328,12 @@ export default function Admin() {
 
         <div style={{ marginTop: 20, borderTop: "1px solid var(--borda)", paddingTop: 16 }}>
           <label style={{ fontWeight: 700, display: "block", marginBottom: 8 }}>
-            Aba Mata-mata —{" "}
-            <span style={{ color: mataMataAberto ? "var(--verde)" : "var(--texto-suave)" }}>
-              {mataMataAberto ? "🟢 Visível" : "🔴 Oculta"}
-            </span>
+            Mata-mata
           </label>
-          <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
-            <button className="btn primario" style={{ flex: 1 }} onClick={liberarMataMata} disabled={mataMataAberto}>
-              🔓 Liberar aba
-            </button>
-            <button className="btn contorno" style={{ flex: 1 }} onClick={fecharMataMata} disabled={!mataMataAberto}>
-              🔒 Ocultar aba
-            </button>
-          </div>
 
           <p style={{ fontSize: "0.75rem", color: "var(--texto-suave)", marginTop: 6 }}>
-            Os confrontos do mata-mata são buscados automaticamente da fonte pública
-            (OpenFootball) quando alguém abre a aba <b>Mata-mata</b>, e ficam em dia no
+            A aba fica sempre visível. Os confrontos são buscados automaticamente da
+            fonte pública quando alguém abre a aba <b>Mata-mata</b>, e ficam em dia no
             Firestore sempre que um admin a abre.
             {jogosKO.length > 0
               ? <> <b>{jogosKO.length} jogo(s) de KO já em cache.</b></>

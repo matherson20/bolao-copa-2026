@@ -166,18 +166,21 @@ const TSDB_DIAS_KO = [
   "2026-07-14","2026-07-15","2026-07-18","2026-07-19",
 ];
 
-// Minuto UTC (YYYY-MM-DDTHH:MM) de um instante ISO — chave de casamento entre fontes.
+// Minuto UTC (YYYY-MM-DDTHH:MM) de um ISO — chave de casamento entre fontes.
+// Por minuto (não por ms) para tolerar segundos/pequenas diferenças entre fontes.
 function minutoUTC(iso) {
   if (!iso) return null;
   const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return null;
-  return new Date(t).toISOString().slice(0, 16);
+  return Number.isNaN(t) ? null : new Date(t).toISOString().slice(0, 16);
 }
 
 /**
  * Busca os confrontos KO na TheSportsDB e devolve um mapa
  *   { [minutoUTC]: { fase, timeCasa, timeFora } }
- * só com jogos cujos DOIS lados são seleções reais (ignora placeholders).
+ * só com jogos cujos DOIS lados são seleções reais (ignora placeholders/TBD).
+ *
+ * `intRound` 32/16/8/4/1 mapeia direto; 2 = semifinal ou disputa de 3º (a fonte
+ * não distingue) → marcamos "semi-ou-terceiro" e o faseCompativel resolve.
  */
 async function carregarConfrontosTheSportsDB() {
   const porMinuto = {};
@@ -190,46 +193,58 @@ async function carregarConfrontosTheSportsDB() {
   );
   for (const data of respostas) {
     for (const ev of data?.events || []) {
-      const fase = TSDB_ROUND_FASE[Number(ev?.intRound)];
+      const r = Number(ev?.intRound);
+      const fase = TSDB_ROUND_FASE[r] || (r === 2 ? "semi-ou-terceiro" : null);
       if (!fase) continue;
-      const casa = pt(ev.strHomeTeam);
-      const fora = pt(ev.strAwayTeam);
-      // Só confrontos com os dois times reais (não placeholders/TBD).
       if (!ehSelecao(ev.strHomeTeam) || !ehSelecao(ev.strAwayTeam)) continue;
       const ts = ev.strTimestamp
         ? `${ev.strTimestamp.replace(" ", "T")}Z`
         : (ev.dateEvent && ev.strTime ? `${ev.dateEvent}T${ev.strTime}Z` : null);
       const chave = minutoUTC(ts);
       if (!chave) continue;
-      porMinuto[chave] = { fase, timeCasa: casa, timeFora: fora };
+      porMinuto[chave] = { fase, timeCasa: pt(ev.strHomeTeam), timeFora: pt(ev.strAwayTeam) };
     }
   }
   return porMinuto;
 }
 
+// Uma fase da TheSportsDB é compatível com a fase do nosso jogo?
+function faseCompativel(faseTsdb, faseJogo) {
+  if (faseTsdb === faseJogo) return true;
+  // round=2 da TheSportsDB cobre tanto a semi quanto a disputa de 3º.
+  if (faseTsdb === "semi-ou-terceiro") return faseJogo === "semi" || faseJogo === "terceiro";
+  return false;
+}
+
 /**
  * Carrega o bracket KO: estrutura/numeração da OpenFootball, com os CONFRONTOS
- * preenchidos pela TheSportsDB (primária) quando ela já tiver cravado o jogo.
+ * preenchidos pela TheSportsDB (primária) conforme ela vai cravando cada rodada.
  *
- * Casa os dois pela data/hora em UTC (mesmo instante = mesmo jogo). Quando a
- * TheSportsDB define os times de um jogo, eles SUBSTITUEM os slots — assim o
- * jogo vira "definido" (palpitável) pela fonte oficial, sem depender de cálculo.
+ * Conforme os resultados acontecem, a TheSportsDB publica a próxima rodada com os
+ * times reais; ao abrir a aba, casamos esses confrontos com os slots da
+ * OpenFootball e os jogos viram "definidos" (palpitáveis). É assim que oitavas,
+ * quartas, semis e final vão sendo LIBERADAS rodada a rodada — não de uma vez.
+ *
+ * Casamento: SÓ por instante UTC exato (mesmo horário = mesmo jogo). É o critério
+ * seguro — casar por "horário aproximado" embaralharia confrontos do mesmo dia.
+ * Se a OpenFootball tiver um horário provisório divergente numa fase futura, o
+ * confronto fica readonly até os horários convergirem (quando a FIFA confirma) —
+ * melhor um confronto readonly do que um confronto TROCADO valendo palpite.
  */
 export async function carregarKnockout(url = OPENFOOTBALL_URL) {
-  const [jogos, tsdb] = await Promise.all([
+  const [jogos, porMinuto] = await Promise.all([
     carregarKnockoutOpenFootball(url),
     carregarConfrontosTheSportsDB().catch(() => ({})),
   ]);
 
   for (const j of jogos) {
-    // Já definido pela OpenFootball? mantém.
-    if (j.timeCasa && j.timeFora) continue;
-    const conf = tsdb[minutoUTC(j.dataHora)];
-    if (!conf || conf.fase !== j.fase) continue;
-    // A TheSportsDB pode reportar o mando invertido em relação ao slot da OF.
-    // Mantemos a ordem casa/fora da TheSportsDB (fonte primária do confronto).
-    j.timeCasa = conf.timeCasa;
-    j.timeFora = conf.timeFora;
+    if (j.timeCasa && j.timeFora) continue; // já definido pela OpenFootball
+    const c = porMinuto[minutoUTC(j.dataHora)];
+    if (!c || !faseCompativel(c.fase, j.fase)) continue;
+    // A TheSportsDB pode reportar o mando invertido; mantemos a ordem dela
+    // (fonte primária do confronto).
+    j.timeCasa = c.timeCasa;
+    j.timeFora = c.timeFora;
     j.fonteConfronto = "thesportsdb";
   }
   return jogos;
@@ -284,6 +299,22 @@ export async function sincronizarMataMata(url = OPENFOOTBALL_URL) {
     for (const m of ms) if (FASE_ORDEM.includes(m.fase)) existentes[m.id] = m;
   } catch {
     // Sem rede / sem leitura: ainda devolvemos os jogos da API para a tela.
+  }
+
+  // ── Rede de segurança: o Firestore só CRESCE ──
+  // As fontes (TheSportsDB principalmente) podem falhar/oscilar por rate limit e
+  // devolver um confronto como indefinido que já estava cravado antes. Para não
+  // "perder" um confronto já conhecido, quando a API não definiu os dois times
+  // mas o Firestore já tem, usamos o do Firestore. Assim um jogo nunca regride
+  // de definido para indefinido por causa de uma falha momentânea da fonte.
+  for (const j of jogos) {
+    if (j.timeCasa && j.timeFora) continue;
+    const ex = existentes[j.id];
+    if (ex?.timeCasa && ex?.timeFora) {
+      j.timeCasa = ex.timeCasa;
+      j.timeFora = ex.timeFora;
+      j.fonteConfronto = ex.fonteConfronto || "cache";
+    }
   }
 
   let atualizados = 0;
