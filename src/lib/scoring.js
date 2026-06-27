@@ -23,8 +23,6 @@ export const PONTOS = {
   final:    { exato: 20, resultado: 8 },
 };
 
-export const PONTOS_AVANCA = 3; // acertar quem avanca no mata-mata (independe do placar)
-
 export const PONTOS_ESPECIAIS = {
   campeao: 20,
   artilheiro: 12,
@@ -40,8 +38,6 @@ export const ESPECIAIS_LABEL = {
   surpresa: "Seleção surpresa",
   decepcao: "Seleção decepção da Copa",
 };
-
-const KNOCKOUT = new Set(["r32", "oitavas", "quartas", "semi", "terceiro", "final"]);
 
 // Retorna "C" (casa), "E" (empate) ou "F" (fora) a partir de um placar.
 export function resultadoDoPlacar(casa, fora) {
@@ -73,11 +69,9 @@ export function pontosDoJogo(palpite, resultado, fase) {
     pts += tabela.resultado;
   }
 
-  // Bonus de "quem avanca" no mata-mata (resultado final do jogo: 90min, prorrogacao ou penaltis).
-  if (KNOCKOUT.has(fase) && palpite.avanca && resultado.avanca) {
-    if (palpite.avanca === resultado.avanca) pts += PONTOS_AVANCA;
-  }
-
+  // Pontuação do mata-mata = placar exato OU resultado certo, sempre pelo placar
+  // OFICIAL gravado (tempo regulamentar: jogo decidido nos pênaltis conta como
+  // empate). Não há bônus de "quem avança".
   return pts;
 }
 
