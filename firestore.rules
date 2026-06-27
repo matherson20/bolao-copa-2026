@@ -29,6 +29,16 @@ service cloud.firestore {
         || request.time.toMillis() < get(/databases/$(database)/documents/config/global).data.travaGruposTimestamp;
     }
 
+    // "Portao" do mata-mata: libera a ESCRITA de palpites ate o inicio da final
+    // (19/07/2026 16:00 UTC = 13:00 BRT). A trava fina por jogo (cada confronto
+    // fecha 23:59 BRT da vespera, fase a fase) e feita na APLICACAO — a regra so
+    // garante que ninguem grave palpite depois que a Copa acabou. O documento de
+    // palpites e unico (bets/{uid}), entao a regra nao consegue validar jogo a
+    // jogo; por isso o controle fino fica na tela.
+    function mataMataLiberado() {
+      return request.time.toMillis() < 1784516399000; // 19/07/2026 23:59:59 BRT (fim do dia da final)
+    }
+
     // Usuarios: cada um cria/edita o proprio doc.
     // isAdmin so pode ser true se o email esta na lista de admins definida no codigo.
     // A lista de emails admin e verificada no servidor (db.js) — a regra apenas
@@ -53,13 +63,15 @@ service cloud.firestore {
       allow write: if ehAdmin();
     }
 
-    // Palpites: cada um escreve no proprio doc e SO antes da trava.
+    // Palpites: cada um escreve no proprio doc. Permitido enquanto a fase de
+    // grupos nao travou (palpites de grupos) OU enquanto o mata-mata esta em
+    // andamento (palpites de KO). A trava fina por jogo e' feita na aplicacao.
     // Admin pode apagar qualquer doc (usado para zerar a base entre testes).
     match /bets/{uid} {
       allow read: if logado();
       allow write: if logado()
         && request.auth.uid == uid
-        && antesDaTrava();
+        && (antesDaTrava() || mataMataLiberado());
       allow delete: if ehAdmin();
     }
 
