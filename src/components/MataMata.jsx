@@ -1,68 +1,122 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../lib/useAuth.jsx";
-import { getBets, saveBets, getConfig } from "../lib/db";
+import { getBets, saveBets, getConfig, getResults } from "../lib/db";
 import { bandeira } from "../lib/teams";
-import { gerarJogosFaseGrupos } from "../lib/seedData";
-import { calcularClassificacaoGrupo } from "../lib/classificacao";
-import {
-  getClassificados, gerarTrintaEDois, gerarOitavas,
-  gerarQuartas, gerarSemis, gerarFinal, faseCompleta,
-} from "../lib/playoffs";
 import { soDigitosKeyDown, soDigitosPaste } from "../lib/inputs";
+import { FASE_ORDEM, FASE_TITULO, sincronizarMataMata } from "../lib/koImport";
+import { estadoJogoMata } from "../lib/faseConfig";
+import { classificacaoReal, resolverSlot, atribuicaoTerceiros } from "../lib/koProvavel";
 
-const JOGOS_GRUPOS = gerarJogosFaseGrupos();
+const FASE_ICONE = {
+  r32: "⚡", oitavas: "⚡", quartas: "⚡", semi: "🔥", terceiro: "🥉", final: "🏆",
+};
 
 function fmtData(iso) {
   if (!iso) return "";
   try {
-    return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-  } catch { return iso; }
+    return new Date(iso).toLocaleString("pt-BR", {
+      day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+    });
+  } catch { return ""; }
 }
 
-function JogoMata({ jogo, palpite, travado, bloqueado, onChange }) {
+// Lado de um jogo (casa ou fora): nome definido OU rótulo do provável confronto.
+function ladoJogo(jogo, lado, ctx) {
+  const time = lado === "casa" ? jogo.timeCasa : jogo.timeFora;
+  if (time) return { nome: time, time, provavel: false };
+  const info = lado === "casa" ? jogo.slotCasaInfo : jogo.slotForaInfo;
+  const r = resolverSlot(info, ctx, jogo.num);
+  return { nome: r.rotulo, time: r.time, provavel: !!r.provavel };
+}
+
+// Tag de status de UM jogo (canto do card).
+const STATUS_JOGO = {
+  definir:   { classe: "tag-definir",   texto: "A definir" },
+  aberto:    { classe: "tag-aberta",    texto: "🔓 Aberto" },
+  encerrado: { classe: "tag-travada",   texto: "🔒 Encerrado" },
+};
+
+function JogoMata({ jogo, palpite, ctx }) {
+  const casa = ladoJogo(jogo, "casa", ctx);
+  const fora = ladoJogo(jogo, "fora", ctx);
+  const definido = !!jogo.timeCasa && !!jogo.timeFora;
+  // Estado do confronto, para o rótulo do rodapé:
+  //  - "estimativa": há um time provável calculado (3º colocado) sendo exibido.
+  //  - "provavel":   algum lado já tem time provável (ex.: 1º/2º de grupo).
+  //  - "aguardando": nenhum time ainda (ex.: oitavas dependendo dos 16-avos).
+  const temProvavel = (casa.time && casa.provavel) || (fora.time && fora.provavel);
+  const temAlgumTime = casa.time || fora.time;
+  const rotuloConfronto = !definido && (
+    temProvavel ? "provável (estimativa)"
+    : temAlgumTime ? "provável confronto"
+    : "aguardando classificação"
+  );
+  const estado = estadoJogoMata(jogo, ctx.cfg);
+  const editavel = estado === "aberto";
+  const info = STATUS_JOGO[estado] || STATUS_JOGO.definir;
   const p = palpite || {};
-  const semTimes = !jogo?.timeCasa || !jogo?.timeFora;
-  const off = bloqueado || semTimes;
+
+  // Nome de um lado: itálico/slot quando não há time; itálico leve quando é estimativa.
+  const nomeClasse = (l) => (!l.time ? "jm-nome jm-nome-slot" : l.provavel ? "jm-nome jm-nome-estimativa" : "jm-nome");
+
   return (
-    <div className={`jogo-mata${off ? " jogo-bloqueado" : ""}`}>
+    <div className={`jogo-mata${!definido ? " jogo-indefinido" : ""}`}>
       <div className="jm-time jm-casa">
-        <span className="jm-bandeira">{bandeira(jogo?.timeCasa)}</span>
-        <span className="jm-nome">{jogo?.timeCasa || "A definir"}</span>
+        <span className="jm-bandeira">{casa.time ? bandeira(casa.time) : "⚽"}</span>
+        <span className={nomeClasse(casa)}>{casa.nome}</span>
       </div>
       <div className="jm-placar">
         <input type="number" min="0" inputMode="numeric" maxLength={2}
           onKeyDown={soDigitosKeyDown} onPaste={soDigitosPaste}
-          value={p.casa ?? ""} disabled={travado || off}
-          onChange={(e) => onChange("casa", e.target.value)} />
+          value={p.casa ?? ""} disabled={!editavel}
+          onChange={(e) => ctx.onGol(jogo.id, "casa", e.target.value)} />
         <span className="jm-x">×</span>
         <input type="number" min="0" inputMode="numeric" maxLength={2}
           onKeyDown={soDigitosKeyDown} onPaste={soDigitosPaste}
-          value={p.fora ?? ""} disabled={travado || off}
-          onChange={(e) => onChange("fora", e.target.value)} />
+          value={p.fora ?? ""} disabled={!editavel}
+          onChange={(e) => ctx.onGol(jogo.id, "fora", e.target.value)} />
       </div>
       <div className="jm-time jm-fora">
-        <span className="jm-nome">{jogo?.timeFora || "A definir"}</span>
-        <span className="jm-bandeira">{bandeira(jogo?.timeFora)}</span>
+        <span className={nomeClasse(fora)}>{fora.nome}</span>
+        <span className="jm-bandeira">{fora.time ? bandeira(fora.time) : "⚽"}</span>
       </div>
-      {jogo?.label && <div className="jm-label">{jogo.label}</div>}
+      <div className="jm-label">
+        {jogo.dataHora ? fmtData(jogo.dataHora) : ""}
+        <span className={`jm-status ${info.classe}`}>
+          {definido ? info.texto : rotuloConfronto}
+        </span>
+      </div>
     </div>
   );
 }
 
-function FaseBloco({ titulo, icone, jogos, palpites, travado, bloqueado, dica, onGol, colunas = 4 }) {
+function FaseBloco({ fase, jogos, palpites, ctx }) {
+  const abertos = jogos.filter((j) => estadoJogoMata(j, ctx.cfg) === "aberto").length;
+  const aDefinir = jogos.filter((j) => !j.timeCasa || !j.timeFora).length;
+  const encerrados = jogos.filter((j) => estadoJogoMata(j, ctx.cfg) === "encerrado").length;
+
+  const partes = [];
+  if (abertos) partes.push(`${abertos} aberto${abertos > 1 ? "s" : ""}`);
+  if (aDefinir) partes.push(`${aDefinir} a definir`);
+  if (encerrados) partes.push(`${encerrados} encerrado${encerrados > 1 ? "s" : ""}`);
+
   return (
     <div className="mata-fase">
       <div className="mata-fase-titulo">
-        <span>{icone}</span> {titulo}
+        <span>{FASE_ICONE[fase] || "⚡"}</span> {FASE_TITULO[fase] || fase}
+        {partes.length > 0 && (
+          <span className="mata-fase-resumo">{partes.join(" · ")}</span>
+        )}
       </div>
-      {bloqueado && dica && (
-        <div className="mata-dica">{dica}</div>
+      {aDefinir > 0 && abertos === 0 && encerrados === 0 && (
+        <div className="mata-dica">
+          Confrontos ainda não definidos — mostrando o provável com base na classificação atual.
+          Liberam para palpite assim que os times saírem.
+        </div>
       )}
-      <div className={`jm-grid jm-grid-${Math.min(jogos.length, colunas)}`}>
-        {jogos.map((m) => (
-          <JogoMata key={m.id} jogo={m} palpite={palpites[m.id]}
-            travado={travado} bloqueado={bloqueado}
-            onChange={(lado, val) => onGol(m.id, lado, val)} />
+      <div className={`jm-grid jm-grid-${Math.min(jogos.length, 4)}`}>
+        {jogos.map((j) => (
+          <JogoMata key={j.id} jogo={j} palpite={palpites[j.id]} ctx={ctx} />
         ))}
       </div>
     </div>
@@ -72,8 +126,9 @@ function FaseBloco({ titulo, icone, jogos, palpites, travado, bloqueado, dica, o
 export default function MataMata() {
   const { user } = useAuth();
   const [palpites, setPalpites] = useState({});
-  const [travaGrupos, setTravaGrupos] = useState(null);
-  const [travaMataMata, setTravaMataMata] = useState(null);
+  const [cfg, setCfg] = useState(null);
+  const [jogosKO, setJogosKO] = useState([]);
+  const [resultados, setResultados] = useState({});
   const [faseAberta, setFaseAberta] = useState(false);
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
@@ -83,12 +138,19 @@ export default function MataMata() {
   useEffect(() => {
     (async () => {
       try {
-        const [bets, cfg] = await Promise.all([getBets(user.uid), getConfig()]);
+        // Confrontos vêm direto da API (sempre frescos). Se for admin, a própria
+        // chamada grava/atualiza os jogos no Firestore (pro Hoje e o sync de placar).
+        const [bets, config, res, ko] = await Promise.all([
+          getBets(user.uid),
+          getConfig(),
+          getResults(),
+          sincronizarMataMata().catch((e) => { console.error(e); return { jogos: [] }; }),
+        ]);
         setPalpites(bets.jogos || {});
-        setTravaGrupos(cfg?.travaGruposTimestamp || null);
-        setTravaMataMata(cfg?.travaMataMataTimestamp || null);
-        // Fase de mata-mata aberta se o admin liberou explicitamente
-        setFaseAberta(!!cfg?.mataMataAberto);
+        setCfg(config || {});
+        setFaseAberta(!!config?.mataMataAberto);
+        setResultados(res.resultados || {});
+        setJogosKO(ko.jogos || []);
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     })();
@@ -101,30 +163,24 @@ export default function MataMata() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [sujo]);
 
-  // Derivações do chaveamento baseadas nos palpites da fase de grupos
-  const gruposMap = useMemo(() => {
+  // Jogos agrupados por fase, na ordem oficial.
+  const porFase = useMemo(() => {
     const map = {};
-    JOGOS_GRUPOS.forEach((m) => { (map[m.grupo] = map[m.grupo] || []).push(m); });
+    for (const f of FASE_ORDEM) map[f] = [];
+    for (const j of jogosKO) (map[j.fase] = map[j.fase] || []).push(j);
+    for (const f of Object.keys(map)) map[f].sort((a, b) => (a.num || 0) - (b.num || 0));
     return map;
-  }, []);
+  }, [jogosKO]);
 
-  const classificados = useMemo(
-    () => getClassificados(gruposMap, palpites, calcularClassificacaoGrupo),
-    [gruposMap, palpites]
-  );
+  // Contexto para resolver "provável confronto" (classificação real + lookup por num).
+  const koPorNum = useMemo(() => {
+    const m = {};
+    for (const j of jogosKO) if (j.num != null) m[j.num] = j;
+    return m;
+  }, [jogosKO]);
 
-  const r32     = useMemo(() => gerarTrintaEDois(classificados), [classificados]);
-  const oitavas = useMemo(() => gerarOitavas(r32, palpites), [r32, palpites]);
-  const quartas = useMemo(() => gerarQuartas(oitavas, palpites), [oitavas, palpites]);
-  const semis   = useMemo(() => gerarSemis(quartas, palpites), [quartas, palpites]);
-  const { terceiro, final } = useMemo(() => gerarFinal(semis, palpites), [semis, palpites]);
-
-  const r32Completo      = useMemo(() => faseCompleta(r32, palpites), [r32, palpites]);
-  const oitavasCompletas = useMemo(() => faseCompleta(oitavas, palpites), [oitavas, palpites]);
-  const quartasCompletas = useMemo(() => faseCompleta(quartas, palpites), [quartas, palpites]);
-  const semisCompletas   = useMemo(() => faseCompleta(semis, palpites), [semis, palpites]);
-
-  const travado = travaMataMata ? Date.now() >= new Date(travaMataMata).getTime() : false;
+  const tabelaPorGrupo = useMemo(() => classificacaoReal(resultados), [resultados]);
+  const terceiros = useMemo(() => atribuicaoTerceiros(tabelaPorGrupo), [tabelaPorGrupo]);
 
   function setGol(id, lado, valor) {
     const v = valor === "" ? null : Math.max(0, parseInt(valor, 10) || 0);
@@ -132,8 +188,12 @@ export default function MataMata() {
     setSujo(true);
   }
 
+  const ctx = useMemo(
+    () => ({ tabelaPorGrupo, terceiros, resultados, koPorNum, cfg, onGol: setGol }),
+    [tabelaPorGrupo, terceiros, resultados, koPorNum, cfg]
+  );
+
   async function salvar() {
-    if (travado) return;
     setSalvando(true);
     try {
       await saveBets(user.uid, { jogos: palpites });
@@ -149,7 +209,7 @@ export default function MataMata() {
 
   if (loading) return <div className="centro"><div className="spinner" />Carregando…</div>;
 
-  // Fase ainda não aberta pelo admin
+  // Fase de mata-mata ainda não liberada pelo admin.
   if (!faseAberta) {
     return (
       <div className="fase-bloqueada">
@@ -157,76 +217,49 @@ export default function MataMata() {
         <h2>Mata-mata ainda não liberado</h2>
         <p>
           Os palpites do mata-mata abrem após a fase de grupos terminar.<br />
-          O admin vai liberar quando os grupos estiverem definidos.
+          O admin vai liberar quando os confrontos estiverem definidos.
         </p>
-        {travaGrupos && (
-          <div className="fb-data">
-            Fase de grupos encerra em: <b>{fmtData(travaGrupos)}</b>
-          </div>
-        )}
       </div>
     );
   }
 
+  // A API não retornou nenhum jogo do bracket (rede caiu / fonte fora do ar).
+  if (jogosKO.length === 0) {
+    return (
+      <div className="fase-bloqueada">
+        <div className="fb-icone">📡</div>
+        <h2>Confrontos indisponíveis no momento</h2>
+        <p>Não consegui buscar os jogos do mata-mata agora. Tente recarregar em instantes.</p>
+      </div>
+    );
+  }
+
+  const algumEditavel = jogosKO.some((j) => estadoJogoMata(j, cfg) === "aberto");
+
   return (
     <>
-      {travado ? (
-        <div className="aviso aviso-travado">
-          <span>🔒</span>
-          <span><b>Mata-mata encerrado.</b> Seus palpites foram registrados.</span>
-        </div>
-      ) : (
-        <div className="aviso">
-          <span>🏆</span>
-          <span>Preencha o chaveamento completo. Os times são gerados pelos seus palpites da fase de grupos.</span>
-        </div>
-      )}
+      <div className="aviso">
+        <span>🏆</span>
+        <span>
+          Palpite o placar de cada confronto. Cada rodada libera conforme os jogos
+          se aproximam; o que ainda não tem confronto definido mostra o provável.
+        </span>
+      </div>
 
       <div className="secao">
         <div className="secao-corpo mata-corpo">
-
-          <FaseBloco titulo="32-avos de Final" icone="⚡" jogos={r32}
-            palpites={palpites} travado={travado} bloqueado={false}
-            onGol={setGol} colunas={4} />
-
-          <FaseBloco titulo="Oitavas de Final" icone="⚡" jogos={oitavas}
-            palpites={palpites} travado={travado} bloqueado={!r32Completo}
-            dica="Preencha todos os 32-avos para desbloquear."
-            onGol={setGol} colunas={4} />
-
-          <FaseBloco titulo="Quartas de Final" icone="⚡" jogos={quartas}
-            palpites={palpites} travado={travado} bloqueado={!oitavasCompletas}
-            dica="Preencha todas as oitavas para desbloquear."
-            onGol={setGol} colunas={4} />
-
-          <FaseBloco titulo="Semifinais" icone="⚡" jogos={semis}
-            palpites={palpites} travado={travado} bloqueado={!quartasCompletas}
-            dica="Preencha todas as quartas para desbloquear."
-            onGol={setGol} colunas={2} />
-
-          <div className="mata-fase">
-            <div className="mata-fase-titulo"><span>🏅</span> Decisões Finais</div>
-            {!semisCompletas && <div className="mata-dica">Preencha as semifinais para desbloquear.</div>}
-            <div className="jm-grid jm-grid-2">
-              <div>
-                <div className="jm-sub-label">🥉 3º Lugar</div>
-                <JogoMata jogo={terceiro} palpite={palpites[terceiro?.id]}
-                  travado={travado} bloqueado={!semisCompletas}
-                  onChange={(lado, val) => setGol(terceiro.id, lado, val)} />
-              </div>
-              <div>
-                <div className="jm-sub-label">🏆 Final</div>
-                <JogoMata jogo={final} palpite={palpites[final?.id]}
-                  travado={travado} bloqueado={!semisCompletas}
-                  onChange={(lado, val) => setGol(final.id, lado, val)} />
-              </div>
-            </div>
-          </div>
-
+          {FASE_ORDEM.map((fase) => {
+            const jogos = porFase[fase];
+            if (!jogos || jogos.length === 0) return null;
+            return (
+              <FaseBloco key={fase} fase={fase} jogos={jogos}
+                palpites={palpites} ctx={ctx} />
+            );
+          })}
         </div>
       </div>
 
-      {!travado && (
+      {algumEditavel && (
         <button
           className={`btn-salvar${sujo ? " sujo" : ""}`}
           onClick={salvar}

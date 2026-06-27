@@ -14,6 +14,8 @@ import { bandeira } from "../lib/teams";
 import { ESPECIAIS_LABEL } from "../lib/scoring";
 import { sincronizarResultadosOpenFootball } from "../lib/resultsSync";
 import { getDadosSeed, getTodasSelecoes, gerarJogosFaseGrupos } from "../lib/seedData";
+import { FASE_ORDEM, FASE_TITULO } from "../lib/koImport";
+import { inicioDaFase, estadoJogoMata } from "../lib/faseConfig";
 import SelectBusca from "./SelectBusca.jsx";
 import { soDigitosKeyDown, soDigitosPaste } from "../lib/inputs";
 import { JOGADORES_2026 } from "../lib/players2026";
@@ -69,11 +71,12 @@ function jogosVencidosSemPlacar(resultados, agora = Date.now()) {
 export default function Admin() {
   const { user } = useAuth();
   const [matches, setMatches] = useState([]);
+  const [jogosKO, setJogosKO] = useState([]);
   const [resultados, setResultados] = useState({});
   const [gabarito, setGabarito] = useState({});
   const [travaTs, setTravaTs] = useState("");
-  const [travaMataMataTs, setTravaMataMataTs] = useState("");
   const [mataMataAberto, setMataMataAberto] = useState(false);
+  const [cfgFull, setCfgFull] = useState({});
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
   const [importando, setImportando] = useState(false);
@@ -88,21 +91,16 @@ export default function Admin() {
       getConfig(),
     ]);
     setMatches(ms.filter((m) => m.fase === "grupos"));
+    setJogosKO(ms.filter((m) => FASE_ORDEM.includes(m.fase)));
     setResultados(res.resultados || {});
     setGabarito(res.gabaritoEspeciais || {});
+    setCfgFull(cfg || {});
     if (cfg?.travaGruposTimestamp) {
       const d = new Date(cfg.travaGruposTimestamp);
       const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
         .toISOString()
         .slice(0, 16);
       setTravaTs(local);
-    }
-    if (cfg?.travaMataMataTimestamp) {
-      const d = new Date(cfg.travaMataMataTimestamp);
-      const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-        .toISOString()
-        .slice(0, 16);
-      setTravaMataMataTs(local);
     }
     setMataMataAberto(cfg?.mataMataAberto === true);
   }
@@ -227,11 +225,19 @@ export default function Admin() {
     flash("Mata-mata fechado.");
   }
 
-  async function salvarTravaMataMata() {
-    if (!travaMataMataTs) return;
-    const millis = new Date(travaMataMataTs).getTime();
-    await setConfig({ travaMataMataTimestamp: millis });
-    flash("Trava do mata-mata salva.");
+  // ---- Overrides de trava por rodada do mata-mata ----
+  // Mexe em config.liberarFase[fase] / config.travarFase[fase].
+  async function setOverrideFase(fase, modo) {
+    // modo: "auto" | "liberar" | "travar"
+    const liberar = { ...(cfgFull.liberarFase || {}) };
+    const travar = { ...(cfgFull.travarFase || {}) };
+    delete liberar[fase];
+    delete travar[fase];
+    if (modo === "liberar") liberar[fase] = true;
+    if (modo === "travar") travar[fase] = true;
+    await setConfig({ liberarFase: liberar, travarFase: travar });
+    setCfgFull((c) => ({ ...c, liberarFase: liberar, travarFase: travar }));
+    flash(`Rodada ${FASE_TITULO[fase]}: ${modo === "auto" ? "automática" : modo === "liberar" ? "liberada" : "travada"}.`);
   }
 
   // ---- Resultados ----
@@ -339,33 +345,72 @@ export default function Admin() {
 
         <div style={{ marginTop: 20, borderTop: "1px solid var(--borda)", paddingTop: 16 }}>
           <label style={{ fontWeight: 700, display: "block", marginBottom: 8 }}>
-            Fase Mata-mata —{" "}
+            Aba Mata-mata —{" "}
             <span style={{ color: mataMataAberto ? "var(--verde)" : "var(--texto-suave)" }}>
-              {mataMataAberto ? "🟢 Aberto" : "🔴 Fechado"}
+              {mataMataAberto ? "🟢 Visível" : "🔴 Oculta"}
             </span>
           </label>
           <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
             <button className="btn primario" style={{ flex: 1 }} onClick={liberarMataMata} disabled={mataMataAberto}>
-              🔓 Liberar mata-mata
+              🔓 Liberar aba
             </button>
             <button className="btn contorno" style={{ flex: 1 }} onClick={fecharMataMata} disabled={!mataMataAberto}>
-              🔒 Fechar mata-mata
+              🔒 Ocultar aba
             </button>
           </div>
-          <div className="campo">
-            <label>Trava dos palpites do mata-mata (início do 1º jogo)</label>
-            <input
-              type="datetime-local"
-              value={travaMataMataTs}
-              onChange={(e) => setTravaMataMataTs(e.target.value)}
-            />
-          </div>
-          <button className="btn azul" style={{ marginTop: 6 }} onClick={salvarTravaMataMata}>
-            Salvar trava do mata-mata
-          </button>
+
           <p style={{ fontSize: "0.75rem", color: "var(--texto-suave)", marginTop: 6 }}>
-            Libere após a fase de grupos terminar. Os jogos do mata-mata devem estar cadastrados no Firestore (matches) com a fase correta (r32, oitavas, etc.) antes de liberar.
+            Os confrontos do mata-mata são buscados automaticamente da fonte pública
+            (OpenFootball) quando alguém abre a aba <b>Mata-mata</b>, e ficam em dia no
+            Firestore sempre que um admin a abre.
+            {jogosKO.length > 0
+              ? <> <b>{jogosKO.length} jogo(s) de KO já em cache.</b></>
+              : <> Abra a aba Mata-mata uma vez para popular o painel abaixo.</>}
           </p>
+
+          {jogosKO.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <label style={{ fontWeight: 700, display: "block", marginBottom: 6 }}>
+                Trava por rodada
+              </label>
+              <p style={{ fontSize: "0.75rem", color: "var(--texto-suave)", marginTop: 0, marginBottom: 8 }}>
+                Cada JOGO trava sozinho no seu próprio horário (e só fica palpitável
+                com os dois times definidos). Os botões abaixo forçam a fase inteira.
+              </p>
+              {FASE_ORDEM.map((fase) => {
+                const jogos = jogosKO.filter((m) => m.fase === fase);
+                if (jogos.length === 0) return null;
+                const ini = inicioDaFase(jogos);
+                const abertos = jogos.filter((j) => estadoJogoMata(j, cfgFull) === "aberto").length;
+                const aDefinir = jogos.filter((j) => !j.timeCasa || !j.timeFora).length;
+                const encerrados = jogos.filter((j) => estadoJogoMata(j, cfgFull) === "encerrado").length;
+                const forcLib = !!cfgFull.liberarFase?.[fase];
+                const forcTrav = !!cfgFull.travarFase?.[fase];
+                return (
+                  <div key={fase} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: "1px solid var(--borda)", flexWrap: "wrap" }}>
+                    <div style={{ flex: "1 1 160px", minWidth: 140 }}>
+                      <div style={{ fontWeight: 600, fontSize: "0.85rem" }}>
+                        {FASE_TITULO[fase]}{" "}
+                        <span style={{ color: "var(--texto-suave)", fontSize: "0.78rem" }}>
+                          {[abertos && `${abertos} aberto(s)`, aDefinir && `${aDefinir} a definir`, encerrados && `${encerrados} encerrado(s)`].filter(Boolean).join(" · ")}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: "0.72rem", color: "var(--texto-suave)" }}>
+                        1º jogo: {ini ? new Date(ini).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}
+                        {forcLib && " · forçado ABERTO"}
+                        {forcTrav && " · forçado TRAVADO"}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <button className="btn contorno" style={{ width: "auto", padding: "4px 8px", fontSize: "0.72rem", opacity: !forcLib && !forcTrav ? 1 : 0.5 }} onClick={() => setOverrideFase(fase, "auto")}>Auto</button>
+                      <button className="btn primario" style={{ width: "auto", padding: "4px 8px", fontSize: "0.72rem" }} onClick={() => setOverrideFase(fase, "liberar")}>Liberar</button>
+                      <button className="btn contorno" style={{ width: "auto", padding: "4px 8px", fontSize: "0.72rem" }} onClick={() => setOverrideFase(fase, "travar")}>Travar</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 10 }}>

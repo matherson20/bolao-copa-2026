@@ -1455,6 +1455,40 @@ table.palpites tbody tr:hover td { background: var(--verde-claro); }
   text-align: center;
 }
 
+/* Confronto ainda indefinido: rótulo do provável (ex.: "1º do Grupo I") */
+.jm-nome-slot {
+  font-style: italic;
+  font-weight: 500;
+  color: var(--texto-suave);
+}
+/* Time estimado (ex.: melhor 3º calculado): nome real, mas em itálico p/ sinalizar */
+.jm-nome-estimativa { font-style: italic; }
+
+/* Resumo de estados no título da fase (ex.: "3 abertos · 13 a definir") */
+.mata-fase-resumo {
+  margin-left: auto;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--texto-suave);
+  white-space: nowrap;
+}
+
+/* Tag de status de cada jogo, no rodapé do card */
+.jm-status {
+  margin-left: 6px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.6rem;
+}
+.jm-status.tag-aberta   { color: var(--verde-escuro); background: var(--verde-claro); }
+.jm-status.tag-travada  { color: var(--texto-suave); background: var(--bg); border: 1px solid var(--borda); }
+.jm-status.tag-definir  { color: #8a6d00; background: #fff8e1; border: 1px solid #f0e0a0; }
+
+/* Jogo sem confronto definido: visual mais leve, mas legível (não opaco) */
+.jogo-indefinido { background: var(--bg); }
+.jogo-indefinido .jm-placar input { background: var(--bg); }
+
 .jm-sub-label {
   font-size: 0.7rem;
   font-weight: 700;

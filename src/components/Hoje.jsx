@@ -4,6 +4,7 @@ import { gerarJogosFaseGrupos } from "../lib/seedData";
 import { bandeira } from "../lib/teams";
 import { statusDoPalpite } from "../lib/scoring";
 import { sincronizarResultadosOpenFootball } from "../lib/resultsSync";
+import { sincronizarMataMata } from "../lib/koImport";
 import { gruposTravados } from "../lib/faseConfig";
 
 const JOGOS_GRUPOS = gerarJogosFaseGrupos();
@@ -51,8 +52,12 @@ export default function Hoje() {
   useEffect(() => {
     (async () => {
       try {
-        // 1) Tenta atualizar resultados pela fonte pública (grava só se for admin).
+        // 1) Atualiza pela fonte pública (grava só se for admin):
+        //    a) confrontos do mata-mata (jogos KO) — pro Hoje listar e o placar casar;
+        //    b) placares dos jogos (grupos + KO já cadastrados).
+        // Mata-mata primeiro, pra que o sync de placar já encontre os jogos KO.
         setSincronizando(true);
+        try { await sincronizarMataMata(); } catch { /* offline/sem permissão: ignora */ }
         try { await sincronizarResultadosOpenFootball(); } catch { /* offline/sem permissão: ignora */ }
         setSincronizando(false);
 
